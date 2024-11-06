@@ -93,7 +93,8 @@ def run():
     # targets = [p.stem for p in in_dir.iterdir() if p.is_dir()] 
     for model_name in tqdm(args.model_names):
         if model_name == "Patchcore":
-            resolution = 128
+            resolution = 64 
+            # resolution = 128
             # resolution = 256 
         else: 
             resolution = args.resolution
