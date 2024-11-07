@@ -12,8 +12,8 @@ import wandb
 
 from anomalib import TaskType
 
-from caenorhabditiselegans_anomalydetection_dataset.run.train import train
-from caenorhabditiselegans_anomalydetection_dataset.run.predict import predict 
+from celegans_proj.run.train import train
+from celegans_proj.run.predict import predict 
 
 logger = logging.getLogger(__name__)
 
@@ -33,12 +33,12 @@ def run():
 
     # parser.add_argument('--in_dir', default= "/mnt/e/WDDD2_AD", help='')
     # parser.add_argument('--in_dir', default= "/mnt/e/mvtec_anomaly_detection", help='')
-    parser.add_argument('--in_dir', default= "/home/skazuki/data//WDDD2_AD", help='')
+    parser.add_argument('--in_dir', default= "/home/skazuki/data/WDDD2_AD", help='')
 
     parser.add_argument('--train_ckpt', default= None, help='')
-    parser.add_argument('--batch', default= 1, help='')
+    parser.add_argument('--batch', default= 1, type=int, help='')
     # parser.add_argument('--resolution', default= 128,  help='') 
-    parser.add_argument('--resolution', default= 256,  help='') 
+    parser.add_argument('--resolution', default= 256,  type=int, help='') 
 
     parser.add_argument("--pseudo_anomaly_modes", 
                         nargs='+',

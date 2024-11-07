@@ -27,7 +27,7 @@ from anomalib.data.utils import TestSplitMode
 
 import wandb
 
-from caenorhabditiselegans_anomalydetection_dataset.run.image.wddd2 import (
+from celegans_proj.run.image.wddd2 import (
     WDDD2_AD,
     YouTransform,
 ) 
@@ -102,7 +102,7 @@ def train(
         root = in_dir ,
         category = target_data,
         train_batch_size = batch,
-        eval_batch_size = batch ,
+        eval_batch_size = batch,
         test_split_mode=TestSplitMode.SYNTHETIC,
         num_workers = worker, 
         task = TaskType.SEGMENTATION,#CLASSIFICATION,#  

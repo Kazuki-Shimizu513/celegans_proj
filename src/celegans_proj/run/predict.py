@@ -26,11 +26,11 @@ from anomalib.data.utils import TestSplitMode
 
 import wandb
 
-from caenorhabditiselegans_anomalydetection_dataset.run.image.wddd2 import (
+from celegans_proj.run.image.wddd2 import (
     WDDD2_AD,
     YouTransform,
 ) 
-from caenorhabditiselegans_anomalydetection_dataset.run.train import train
+from celegans_proj.run.train import train
 
 logger = logging.getLogger(__name__)
 
