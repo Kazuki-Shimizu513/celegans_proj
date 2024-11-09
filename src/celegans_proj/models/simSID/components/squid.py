@@ -2,69 +2,21 @@ import math
 import sys
 import os
 import time
-
-import numpy as np  
-
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from torch.autograd import Variable
 
-from .components import basic_modules
-from .components.basic_modules import (
-    make_window, 
-    window_reverse
-)
-from .components.memory import (
-    MemoryMatrixBlock, \
-    MemoryMatrixBlockV2, \
-    MemoryMatrixBlockV3, \
-    MemoryMatrixBlockV4
-)
-from .components.inpaint import InpaintBlock
+from models import basic_modules
+from models.basic_modules import make_window, window_reverse
+from models.memory import MemoryMatrixBlock, \
+                   MemoryMatrixBlockV2, \
+                   MemoryMatrixBlockV3, \
+                   MemoryMatrixBlockV4
+from models.inpaint import InpaintBlock
 
 
-
-class SimpleDiscriminator(nn.Module):
-    def __init__(self, num_in_ch=1, size=4, num_layers = 4, inplace=True):
-        super(SimpleDiscriminator, self).__init__()
-
-        self.size = size
-
-        keep_stats = True
-
-        out_channels = 16
-        layers = [
-            nn.Conv2d(num_in_ch, out_channels, 5, 2, 2, bias=True),
-            #nn.BatchNorm2d(16, track_running_stats=keep_stats), # this maybe required
-            nn.LeakyReLU(0.2, inplace=inplace),
-        ]
-        
-        for ilayer in range(num_layers):
-            in_channels = out_channels
-            out_channels = min(16 * (2 ** (ilayer + 1)), 256)
-            layers.extend([
-                nn.Conv2d(in_channels, out_channels, 5, 2, 2, bias=True),
-                nn.BatchNorm2d(out_channels, track_running_stats=keep_stats),
-                nn.LeakyReLU(0.2, inplace=inplace),
-            ])
-
-        self.conv_model = nn.Sequential(*layers)
-
-        self.regressor = nn.Linear(out_channels * size * size, 1)
-
-    def forward(self, img):
-        B = img.size(0)
-
-        x = self.conv_model(img) # B, 128, W/16, H/16
-
-        x = x.view(B, -1)
-        x = self.regressor(x)
-        return x
-
-class SQUID(nn.Module):
+class AE(nn.Module):
     def __init__(self, config, features_root, level=4):
-        super(SQUID, self).__init__()
+        super(AE, self).__init__()
         self.config = config
         self.num_in_ch = config.num_in_ch
         self.initial_combine = config.initial_combine
@@ -248,6 +200,3 @@ class SQUID(nn.Module):
         if self.config.analyze_memory:
             outs['alpha'] = alpha
         return outs
-
-if __name__ == "__main__":
-    pass

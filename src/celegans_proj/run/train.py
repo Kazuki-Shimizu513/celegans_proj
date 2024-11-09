@@ -32,6 +32,9 @@ from celegans_proj.run.image.wddd2 import (
     YouTransform,
 ) 
 
+from celegans_proj.models import (
+    SimSID,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +85,7 @@ def train(
     print("prepareing datamodule")
     # https://pytorch.org/vision/main/transforms.html#v2-api-ref
     transforms = v2.Compose([
-                    # v2.Grayscale(), # Wide resNet has 3 channels
+                    v2.Grayscale(), # Wide resNet has 3 channels
                     v2.PILToTensor(),
                     v2.Resize(
                         size=(resolution, resolution), 
@@ -90,11 +93,11 @@ def train(
                     ),
                     v2.ToDtype(torch.float32, scale=True),
                     # TODO: YouTransform
-                    # v2.Normalize(mean=[0.485], std=[0.229]),
-                    v2.Normalize(
-                        mean=[0.485, 0.456, 0.406], 
-                        std=[0.229, 0.224, 0.225],
-                    ),
+                    v2.Normalize(mean=[0.485], std=[0.229]),
+                    # v2.Normalize(
+                    #     mean=[0.485, 0.456, 0.406], 
+                    #     std=[0.229, 0.224, 0.225],
+                    # ),
                 ]) 
 
     # Initialize the datamodule, model and engine
@@ -127,8 +130,10 @@ def train(
             layers = ("layer1", "layer2", "layer3"),
             pre_trained = True,
         )
+    elif model_name == "SimSID":
+        model = SimSID()
     else:
-        logger.info("please give model_name Patchcore or ReverseDistillation")
+        logger.info("please give model_name Patchcore or ReverseDistillation or SimSID")
         return 0
 
     model = torch.compile(model)
@@ -155,13 +160,39 @@ if __name__ == "__main__":
 
     logging.basicConfig(filename='./logs/debug.log', filemode='w', level=logging.DEBUG)
 
+    out_dir = "/mnt/c/Users/compbio/Desktop/shimizudata/"
+    log_dir  = "./logs"
+    in_dir = "/mnt/e/WDDD2_AD"
+    exp_name  = "exp_example"
+    model_name = "SimSID"
+    target_data = "wildType"
+    threshold =  "F1AdaptiveThreshold"
+    metric_name = "pixel_AUROC"
+
+
+    logger = WandbLogger(
+        project =f"{exp_name}",
+        name = f"{model_name}_{target_data}",
+        save_dir = str(log_dir),
+        log_model = "all",#  True, 
+    )
+    # logger.experiment.config.update(**vars(args))
+
+
     train(
-        exp_name = "exp_example",
-        out_dir = "/mnt/c/Users/compbio/Desktop/shimizudata/",
-        model_name = "Patchcore",
+        exp_name = exp_name,
+        out_dir = out_dir,
+        in_dir = in_dir,
+        model_name = model_name,
+        target_data = target_data,
+        threshold =  threshold,
+        logger = logger, 
+        metric_name = metric_name,
+
         ckpt = None, 
         batch = 1,
-        resolution = 256,
+        resolution = 128,# 256,
         task = TaskType.SEGMENTATION, #CLASSIFICATION,#
         worker = 30,
     )
+
