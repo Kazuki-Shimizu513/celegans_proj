@@ -64,7 +64,10 @@ class SimSID(AnomalyModule):
         self, 
     ) -> None:
         self.model = SQUID(
-            self.input_size, self.CONFIG, 32, level=self.CONFIG.level
+            self.input_size, 
+            self.CONFIG, 
+            features_root=32, 
+            level=self.CONFIG.level
         )
 
         self.discriminator = SimpleDiscriminator(

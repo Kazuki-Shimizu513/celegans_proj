@@ -191,7 +191,7 @@ if __name__ == "__main__":
 
         ckpt = None, 
         batch = 16,
-        resolution = 256,# 128, # 
+        resolution =  128, # 256,#
         task = TaskType.SEGMENTATION, #CLASSIFICATION,#
         worker = 30,
     )

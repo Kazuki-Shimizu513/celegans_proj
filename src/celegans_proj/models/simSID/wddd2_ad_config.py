@@ -37,7 +37,7 @@ class BaseConfig():
 
         # model
         self.num_in_ch = 1
-        self.img_size = 256 # 128
+        self.img_size = 128 # 256 # 
         self.num_patch = 2 #4
         self.level = 4 #
         self.shrink_thres = 0.0005
@@ -46,7 +46,7 @@ class BaseConfig():
         self.dist = True
         self.num_slots = 1000
         self.mem_num_slots = 500
-        self.memory_channel = 256 * 4 * 4 #  128 * 4 * 4
+        self.memory_channel = 128 * 4 * 4 # 256 * 4 * 4 #  
         self.mask_ratio = 0.95
         self.ops = ['concat', 'concat', 'none', 'none']
         self.decoder_memory = [None,
@@ -93,7 +93,7 @@ class InpaintBlockConfig():
     use_memory_queue = False
     use_inpaint = True
     num_slots = 200
-    memory_channel = 256 * 4 * 4 # 128*4*4
+    memory_channel = 128 * 4 * 4 # 256 * 4 * 4 # 
     shrink_thres = 5
     drop = 0.    # used in the mlp in the transformer layer
     mask_ratio = 0.9
@@ -131,7 +131,7 @@ class Config(BaseConfig):
         self.scheduler_args_d = dict(T_max=200, eta_min=self.lr*0.2)
 
         # model
-        self.img_size = 256 # 128
+        self.img_size = 128
         self.normalize_tanh = True
         self.num_patch = 2
         self.level = 4
