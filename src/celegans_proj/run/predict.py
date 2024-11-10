@@ -9,6 +9,7 @@ import logging
 from tqdm import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
+from lightning.pytorch import seed_everything 
 from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.callbacks import (
     ModelCheckpoint,
@@ -32,10 +33,16 @@ from celegans_proj.run.image.wddd2 import (
 ) 
 from celegans_proj.run.train import train
 
+from celegans_proj.models import (
+    SimSID,
+)
+
 logger = logging.getLogger(__name__)
 
 torch.set_float32_matmul_precision("medium")
 torch._dynamo.config.suppress_errors = True
+
+seed_everything(44)
 
 # wandb.login()
 
@@ -81,6 +88,24 @@ def predict(
                     ),
                 ]) 
 
+    if model_name == "SimSID":
+        transforms = v2.Compose([
+                        v2.Grayscale(), # Wide resNet has 3 channels
+                        v2.PILToTensor(),
+                        v2.Resize(
+                            size=(resolution, resolution), 
+                            interpolation=v2.InterpolationMode.BILINEAR
+                        ),
+                        v2.ToDtype(torch.float32, scale=True),
+                        # TODO: YouTransform
+                        v2.Normalize(mean=[0.485], std=[0.229]),
+                        # v2.Normalize(
+                        #     mean=[0.485, 0.456, 0.406], 
+                        #     std=[0.229, 0.224, 0.225],
+                        # ),
+                    ]) 
+
+
     datamodule = WDDD2_AD(
         root = in_dir,
         category = target_data,
@@ -109,7 +134,11 @@ def predict(
             layers = ("layer1", "layer2", "layer3"),
             pre_trained = True,
         )
+    elif model_name == "SimSID":
+
+        model = SimSID()
     else:
+
         logger.info("please give model_name Patchcore or ReverseDistillation")
 
     model = torch.compile(model)
@@ -120,7 +149,7 @@ def predict(
         callbacks = callbacks,
         task = task,
         default_root_dir= str(out_dir),
-        threshold = threshold, # "F1AdaptiveThreshold",
+        threshold = threshold, 
     )
 
 
@@ -160,43 +189,53 @@ if __name__ == "__main__":
                         ]
 
 
-    log_dir  = Path("./logs")
-    # in_dir = Path("/mnt/e/WDDD2_AD")
-    in_dir = Path("/home/skazuki/data/WDDD2_AD")
-    # out_dir = Path("/mnt/c/Users/compbio/Desktop/shimizudata/")
-    out_dir = Path("/home/skazuki/playground/CaenorhabditisElegans_AnomalyDetection_Dataset/results/")
+    # exp_name = "exp_example"
+    exp_name  = "exp_20241109"
 
-    model_names = [ "Patchcore",  "ReverseDistillation",]
+    out_dir = Path("/mnt/c/Users/compbio/Desktop/shimizudata/")
+    # out_dir = Path("/home/skazuki/playground/CaenorhabditisElegans_AnomalyDetection_Dataset/results/")
+
+    log_dir  = Path("./logs")
+
+    in_dir = Path("/mnt/e/WDDD2_AD")
+    # in_dir = Path("/home/skazuki/data/WDDD2_AD")
+
+    # model_names = [ "Patchcore",  "ReverseDistillation",]
     # model_names = [ "Patchcore",]
     # model_names = [ "ReverseDistillation",]
+    model_names = [ "SimSID",]
 
-    exo_name = "exp_example"
-    ckpt_path  = out_dir.joinpath(f"{exp_name}/{model_name}/WDDD2_AD/wildType/v0/weights/lightning/model.ckpt")
     # ckpt_path  = out_dir.joinpath(f"exp_example/Patchcore/WDDD2_AD/wildType/v3/weights/lightning/model.ckpt")
     # ckpt_path  = out_dir.joinpath(f"exp_model/ReverseDistillation/WDDD2_AD/wildType/v0/weights/lightning/model.ckpt")
+    threshold = "F1AdaptiveThreshold"
+
     for kind in pseudo_anomaly_modes :
 
         for model_name in  model_names :
 
             logger = WandbLogger(
-                project="exp_example",
+                project=exp_name,
                 # name = "Patchcore_wildType",
                 name = f"{model_name}_{kind}",
                 log_model = "all",#  True, 
                 save_dir = str(log_dir),
             )
 
+            ckpt_path  = out_dir.joinpath(f"{exp_name}/{model_name}/WDDD2_AD/wildType/v0/weights/lightning/model.ckpt")
 
             predict(
                 exp_name =f"{exp_name}_1",
                 out_dir = out_dir,
                 in_dir =  in_dir,
-                target_data = kind, # "wildType",
                 model_name = model_name, 
+                target_data = kind, # "wildType",
+                threshold =  threshold, 
+                logger = logger,
+
                 ckpt = ckpt_path,
-                batch = 1,
-                resolution = 256,
+                batch = 512,
+                resolution = 128, # 256,
                 task = TaskType.SEGMENTATION, #CLASSIFICATION,#
                 worker = 16,
-                logger = logger,
             )
+

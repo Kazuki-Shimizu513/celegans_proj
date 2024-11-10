@@ -1,7 +1,7 @@
 import math
 import sys
 import os
-import time
+# import time
 
 import numpy as np  
 
@@ -63,9 +63,10 @@ class SimpleDiscriminator(nn.Module):
         return x
 
 class SQUID(nn.Module):
-    def __init__(self, config, features_root, level=4):
+    def __init__(self, input_size, config, features_root, level=4):
         super(SQUID, self).__init__()
         self.config = config
+        self.config.img_size = input_size[0]
         self.num_in_ch = config.num_in_ch
         self.initial_combine = config.initial_combine
         self.level = config.level
@@ -74,7 +75,14 @@ class SQUID(nn.Module):
 
         assert len(config.ops) == config.level
 
-        self.filter_list = [features_root, features_root*2, features_root*4, features_root*8, features_root*16, features_root*16]
+        self.filter_list = [
+            features_root, 
+            features_root*2, 
+            features_root*4, 
+            features_root*8, 
+            features_root*16, 
+            features_root*16
+        ]
 
         self.in_conv = basic_modules.inconv(config.num_in_ch, features_root)
         
@@ -149,7 +157,7 @@ class SQUID(nn.Module):
         bs, C, H, W = x.size()
         assert W % self.num_patch == 0 or H % self.num_patch == 0
 
-        squid_start_time = time.time()
+        # squid_start_time = time.time()
         # segment patches
         x = make_window(x, window_size=W//self.num_patch, stride=W//self.num_patch, padding=0) # bs * num_patch**2, C, ws, ws
         num_windows = x.size(0) // bs
@@ -172,7 +180,7 @@ class SQUID(nn.Module):
             embedding = window_reverse(x, w, h * self.num_patch, w * self.num_patch)
             embeddings.append(embedding)
 
-        encoder_time = time.time()
+        # encoder_time = time.time()
         B_, c, h, w = x.shape
         
         t_x = x.clone()
@@ -184,7 +192,7 @@ class SQUID(nn.Module):
             embedding = window_reverse(x, w, h * self.num_patch, w * self.num_patch)
             embeddings.append(embedding)
 
-        inpaint_time = time.time()
+        # inpaint_time = time.time()
 
         self_dist_loss = []
         # decoding
@@ -214,7 +222,7 @@ class SQUID(nn.Module):
                 # do we need sg here? maybe not
                 self_dist_loss.append(self.mse_loss(x, t_x))
 
-        decode_time = time.time()
+        # decode_time = time.time()
 
         # forward teacher decoder
         if self.dist:
@@ -228,7 +236,7 @@ class SQUID(nn.Module):
         x = self.out_conv(x)
         x = self.out_nonlinear(x)
 
-        out_time = time.time()
+        # out_time = time.time()
         # print('Encode time {}, inpaint time {}, decode time {}, out time {}'.format(
         #     encoder_time - squid_start_time, inpaint_time - encoder_time, decode_time - inpaint_time, out_time - decode_time
         # ))

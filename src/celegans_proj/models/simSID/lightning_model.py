@@ -4,6 +4,7 @@ from typing import Any
 
 
 import torch
+import torchvision
 from torch import nn
 from torch import optim
 from torch.nn import functional as F
@@ -63,7 +64,7 @@ class SimSID(AnomalyModule):
         self, 
     ) -> None:
         self.model = SQUID(
-            self.CONFIG, 32, level=self.CONFIG.level
+            self.input_size, self.CONFIG, 32, level=self.CONFIG.level
         )
 
         self.discriminator = SimpleDiscriminator(
@@ -180,8 +181,8 @@ class SimSID(AnomalyModule):
         tot_loss = {}
         tot_loss['train_d_loss'] = d_loss.item()
         tot_loss['train_loss'] = d_loss.item()
-        tot_loss['train_normalScore'] = real_validity.detach().cpu().numpy()
-        tot_loss['train_anomalyScore'] = fake_validity.detach().cpu().numpy()
+        tot_loss['train_normalScore'] = real_validity.detach().cpu().numpy().mean().tolist()
+        tot_loss['train_anomalyScore'] = fake_validity.detach().cpu().numpy().mean().tolist()
 
         # train generator at every n_critic step only
         if batch_idx % self.CONFIG.n_critic == 0:
@@ -211,8 +212,7 @@ class SimSID(AnomalyModule):
         label = batch["label"]
 
         out = self.model(img, fadein_weights= [0.0, 0.0, 1.0, 1.0], )
-        diff_l1 = self.calc_difference(out['recon'] - img)
-        batch["anomaly_map"] = diff_l1
+        diff_l1 = self._calc_difference(out['recon'] , img)
 
         d_loss, real_v, fake_v = self._calc_disc_loss(img, out["recon"], )
         loss, recon_loss, g_loss, t_recon_loss, dist_loss = self._calc_generator_loss(img, out)
@@ -225,11 +225,8 @@ class SimSID(AnomalyModule):
         # self.log_dict(results, prog_bar=True)
 
         tot_loss = {}
-        tot_loss['val_diff_l1'] = diff_l1
-
-        tot_loss['val_normalScore'] = real_v.detach().cpu().numpy()
-        tot_loss['val_anomalyScore'] = fake_v.detach().cpu().numpy()
-
+        tot_loss['val_normalScore'] = real_v.detach().cpu().numpy().mean().tolist()
+        tot_loss['val_anomalyScore'] = fake_v.detach().cpu().numpy().mean().tolist()
         tot_loss['val_d_loss'] = d_loss.item()
         tot_loss['val_loss'] = d_loss.item()
         tot_loss['val_recon_loss'] = recon_loss.item()
@@ -240,8 +237,34 @@ class SimSID(AnomalyModule):
 
         self.log_dict(tot_loss, prog_bar=True)
 
+        batch["anomaly_maps"] = diff_l1
+        batch["pred_scores"] = fake_v.flatten()
 
         return batch
+
+    def predict_step(
+        self, 
+        batch,
+        batch_index,
+        *args, **kwargs,
+    ) -> None:
+        """
+
+        """
+        img = batch["image"]
+        label = batch["label"]
+
+        out = self.model(img, fadein_weights= [0.0, 0.0, 1.0, 1.0], )
+        diff_l1 = self._calc_difference(out['recon'] , img)
+
+        d_loss, real_v, fake_v = self._calc_disc_loss(img, out["recon"], )
+        loss, recon_loss, g_loss, t_recon_loss, dist_loss = self._calc_generator_loss(img, out)
+
+        batch["anomaly_maps"] = diff_l1
+        batch["pred_scores"] = fake_v.flatten()
+
+        return batch
+
 
     def _calc_disc_loss(self,img, recon, ):
 
@@ -285,20 +308,15 @@ class SimSID(AnomalyModule):
         return loss, recon_loss, g_loss, t_recon_loss, dist_loss 
 
 
-    def calc_difference(
+    def _calc_difference(
         self,
         pred,
         target,
         mode = "L1",
-        detach = True,
     ):
         if mode == "L1":
             diff = pred - target
             diff = torch.abs(diff)
-            diff = torch.mean(diff)
-
-        if detach :
-            diff = diff.item()
         return diff
 
 

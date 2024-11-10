@@ -79,9 +79,6 @@ def train(
         DeviceStatsMonitor(),
     ]
 
-
-
-
     print("prepareing datamodule")
     # https://pytorch.org/vision/main/transforms.html#v2-api-ref
     transforms = v2.Compose([
@@ -131,6 +128,7 @@ def train(
             pre_trained = True,
         )
     elif model_name == "SimSID":
+
         model = SimSID()
     else:
         logger.info("please give model_name Patchcore or ReverseDistillation or SimSID")
@@ -138,7 +136,6 @@ def train(
 
     model = torch.compile(model)
 
-    # TODO:: implement logger and callbacks
     print("prepareing Trainer")
     engine = Engine(
         logger = logger,
@@ -160,10 +157,12 @@ if __name__ == "__main__":
 
     logging.basicConfig(filename='./logs/debug.log', filemode='w', level=logging.DEBUG)
 
+    # exp_name  = "exp_example"
+    exp_name  = "exp_20241109"
+
     out_dir = "/mnt/c/Users/compbio/Desktop/shimizudata/"
     log_dir  = "./logs"
     in_dir = "/mnt/e/WDDD2_AD"
-    exp_name  = "exp_example"
     model_name = "SimSID"
     target_data = "wildType"
     threshold =  "F1AdaptiveThreshold"
@@ -191,7 +190,7 @@ if __name__ == "__main__":
 
         ckpt = None, 
         batch = 1,
-        resolution = 128,# 256,
+        resolution = 128, # 256,
         task = TaskType.SEGMENTATION, #CLASSIFICATION,#
         worker = 30,
     )

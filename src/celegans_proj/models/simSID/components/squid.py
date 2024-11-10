@@ -101,7 +101,7 @@ class AE(nn.Module):
         bs, C, H, W = x.size()
         assert W % self.num_patch == 0 or H % self.num_patch == 0
 
-        squid_start_time = time.time()
+        # squid_start_time = time.time()
         # segment patches
         x = make_window(x, window_size=W//self.num_patch, stride=W//self.num_patch, padding=0) # bs * num_patch**2, C, ws, ws
         num_windows = x.size(0) // bs
@@ -124,7 +124,7 @@ class AE(nn.Module):
             embedding = window_reverse(x, w, h * self.num_patch, w * self.num_patch)
             embeddings.append(embedding)
 
-        encoder_time = time.time()
+        # encoder_time = time.time()
         B_, c, h, w = x.shape
         
         t_x = x.clone()
@@ -136,7 +136,7 @@ class AE(nn.Module):
             embedding = window_reverse(x, w, h * self.num_patch, w * self.num_patch)
             embeddings.append(embedding)
 
-        inpaint_time = time.time()
+        # inpaint_time = time.time()
 
         self_dist_loss = []
         # decoding
@@ -166,7 +166,7 @@ class AE(nn.Module):
                 # do we need sg here? maybe not
                 self_dist_loss.append(self.mse_loss(x, t_x))
 
-        decode_time = time.time()
+        # decode_time = time.time()
 
         # forward teacher decoder
         if self.dist:
@@ -180,7 +180,7 @@ class AE(nn.Module):
         x = self.out_conv(x)
         x = self.out_nonlinear(x)
 
-        out_time = time.time()
+        # out_time = time.time()
         # print('Encode time {}, inpaint time {}, decode time {}, out time {}'.format(
         #     encoder_time - squid_start_time, inpaint_time - encoder_time, decode_time - inpaint_time, out_time - decode_time
         # ))
