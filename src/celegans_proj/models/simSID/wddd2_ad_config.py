@@ -37,7 +37,7 @@ class BaseConfig():
 
         # model
         self.num_in_ch = 1
-        self.img_size = 128
+        self.img_size = 256 # 128
         self.num_patch = 2 #4
         self.level = 4 #
         self.shrink_thres = 0.0005
@@ -46,7 +46,7 @@ class BaseConfig():
         self.dist = True
         self.num_slots = 1000
         self.mem_num_slots = 500
-        self.memory_channel = 2048
+        self.memory_channel = 256 * 4 * 4 #  128 * 4 * 4
         self.mask_ratio = 0.95
         self.ops = ['concat', 'concat', 'none', 'none']
         self.decoder_memory = [None,
@@ -93,7 +93,7 @@ class InpaintBlockConfig():
     use_memory_queue = False
     use_inpaint = True
     num_slots = 200
-    memory_channel = 128 * 4 * 4
+    memory_channel = 256 * 4 * 4 # 128*4*4
     shrink_thres = 5
     drop = 0.    # used in the mlp in the transformer layer
     mask_ratio = 0.9
@@ -150,43 +150,5 @@ class Config(BaseConfig):
         self.positive_ratio = 0.9
 
         # misc
-        # self.disable_tqdm = False
-        # self.dataset_name = 'wddd2_ad'
-        # self.early_stop = 200    # used in alert.collect()
         self.limit = 84    # number of iterations per epoch
-        # self.data_type = 'pa'
-        # self.test_disease_type = 'all'    # {'all', 'Atelectasis', 'Cardiomegaly', 'Consolidation', 'Edema', 'Enlarged Cardiomediastinum', 
-        #                                            # 'Fracture', 'Lung Lesion', 'Lung Opacity', 'Pleural Effusion', 'Pleural Other', 'Pneumonia',
-        #                                            # 'Pneumothorax'}
 
-        # self.data_root = '/mnt/data0/yixiao/chexpert'
-        # self.train_dataset = CheXpert(
-        #     self.data_root+'/train_256_'+self.data_type, 
-        #     train=True, 
-        #     img_size=(self.img_size, self.img_size), 
-        #     normalize_tanh=self.normalize_tanh,
-        #     data_type=self.data_type,
-        #     positive_ratio=self.positive_ratio,
-        # )
-        # self.train_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=8, drop_last=False)
-        # self.val_dataset = CheXpert(
-        #     self.data_root+'/val_256_'+self.data_type, 
-        #     train=False, 
-        #     img_size=(self.img_size, self.img_size),
-        #     normalize_tanh=self.normalize_tanh,
-        #     full=True,  
-        #     data_type=self.data_type,
-        #     positive_ratio=self.positive_ratio,
-        # )
-        # self.val_loader = torch.utils.data.DataLoader(self.val_dataset, batch_size=1, shuffle=False, num_workers=8, drop_last=False)
-        # self.test_dataset = CheXpert(
-        #     self.data_root+'/our_test_256_'+self.data_type, 
-        #     train=False, 
-        #     img_size=(self.img_size, self.img_size),
-        #     normalize_tanh=self.normalize_tanh,
-        #     full=True,  
-        #     data_type=self.data_type,
-        #     test_disease_type=self.test_disease_type,
-        #     positive_ratio=self.positive_ratio,
-        # )
-        # self.test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=1, shuffle=False, num_workers=8, drop_last=False)

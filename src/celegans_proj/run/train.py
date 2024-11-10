@@ -158,7 +158,8 @@ if __name__ == "__main__":
     logging.basicConfig(filename='./logs/debug.log', filemode='w', level=logging.DEBUG)
 
     # exp_name  = "exp_example"
-    exp_name  = "exp_20241109"
+    # exp_name  = "exp_20241109"
+    exp_name  = "exp_20241110"
 
     out_dir = "/mnt/c/Users/compbio/Desktop/shimizudata/"
     log_dir  = "./logs"
@@ -189,8 +190,8 @@ if __name__ == "__main__":
         metric_name = metric_name,
 
         ckpt = None, 
-        batch = 1,
-        resolution = 128, # 256,
+        batch = 16,
+        resolution = 256,# 128, # 
         task = TaskType.SEGMENTATION, #CLASSIFICATION,#
         worker = 30,
     )
