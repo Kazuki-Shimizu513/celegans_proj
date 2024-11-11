@@ -27,7 +27,7 @@ import logging
 from tqdm import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
-from caenorhabditiselegans_anomalydetection_dataset.utils.file_import import  WDDD2FileNameUtil
+from celegans_proj.utils.file_import import  WDDD2FileNameUtil
 
 logger = logging.getLogger(__name__)
 
@@ -565,15 +565,19 @@ if __name__ == "__main__":
 
     logging.basicConfig(filename='./logs/debug.log', filemode='w', level=logging.DEBUG)
 
+    exp_name = "exp_20241110_1"
+    # model_names = ["PatchCore", "ReverseDistillation"]
+    model_names = ["SimSID"]
+
     # base_dir = Path("/home/skazuki/playground/CaenorhabditisElegans_AnomalyDetection_Dataset/results/")
-    base_dir = Path("/home/skazuki/playground/CaenorhabditisElegans_AnomalyDetection_Dataset/")
+    base_dir = Path("/mnt/c/Users/compbio/Desktop/shimizudata/")
+
     visualize(
         in_dir = str(base_dir),
         out_dir = str(base_dir),
-        exp_name = "exp_example_1",
+        exp_name = exp_name,
         dataset_name = "WDDD2_AD",
-        model_names = ["PatchCore", "ReverseDistillation"],
+        model_names = model_names, 
         mode = "pseudoAnomaly",
         anomalyKinds = ['wildType', 'gridBlack', 'patchBlack', 'zoom', 'shrink', 'oneCell'],
- 
     )

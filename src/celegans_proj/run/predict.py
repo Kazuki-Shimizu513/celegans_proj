@@ -190,7 +190,7 @@ if __name__ == "__main__":
 
 
     # exp_name = "exp_example"
-    exp_name  = "exp_20241109"
+    exp_name  = "exp_20241110"
 
     out_dir = Path("/mnt/c/Users/compbio/Desktop/shimizudata/")
     # out_dir = Path("/home/skazuki/playground/CaenorhabditisElegans_AnomalyDetection_Dataset/results/")

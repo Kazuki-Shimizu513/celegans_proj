@@ -6,7 +6,9 @@ from .basic_modules import (
     CrossAttnStoreProcessor,
     register_cross_attention_hook, 
     get_net_attn_map, 
-
+    gaussian_blur_2d,
+    min_max_scaling,
+ 
 )
 
 __ALL__ = [
@@ -15,6 +17,9 @@ __ALL__ = [
     "cross_attn_init", 
     "register_cross_attention_hook", 
     "get_net_attn_map", 
+    "gaussian_blur_2d",
+    "min_max_scaling",
+ 
 ]
 
 

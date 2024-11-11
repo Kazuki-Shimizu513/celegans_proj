@@ -20,12 +20,12 @@ from diffusers.models.attention_processor import (
 from diffusers import StableDiffusionXLPipeline, StableDiffusionPipeline
 
 
-from myProject.utils.diffseg_utils import(
-    vis_without_label,
-)
-from myProject.models.segmentor import(
-    DiffSeg, 
-)
+# from myProject.utils.diffseg_utils import(
+#     vis_without_label,
+# )
+# from myProject.models.segmentor import(
+#     DiffSeg, 
+# )
 
 
 
@@ -76,11 +76,13 @@ def attn_call(
     value = attn.head_to_batch_dim(value)
 
     attention_probs = attn.get_attention_scores(query, key, attention_mask)
-    ####################################################################################################
+
+    #ADD################################################################################################
     # (20,4096,77) or (40,1024,77)
     if hasattr(self, "store_attn_map"):
         self.attn_map = attention_probs
     ####################################################################################################
+
     hidden_states = torch.bmm(attention_probs, value)
     hidden_states = attn.batch_to_head_dim(hidden_states)
 
@@ -261,7 +263,7 @@ def lora_attn_call2_0(self, attn: Attention, hidden_states, *args, **kwargs):
 
 class CrossAttnStoreProcessor:
     def __init__(self):
-        self.attention_probs = None
+        self.attn_map = None
 
     def __call__(
         self,
@@ -286,7 +288,7 @@ class CrossAttnStoreProcessor:
         key = attn.head_to_batch_dim(key)
         value = attn.head_to_batch_dim(value)
 
-        self.attention_probs = attn.get_attention_scores(query, key, attention_mask)
+        self.attn_map = attn.get_attention_scores(query, key, attention_mask)
         hidden_states = torch.bmm(self.attention_probs, value)
         hidden_states = attn.batch_to_head_dim(hidden_states)
 
@@ -320,7 +322,8 @@ def hook_fn(name):
 
 def register_cross_attention_hook(unet, key='attn1',):
     for name, module in unet.named_modules():
-        if not name.split('.')[-1].startswith(key):
+        if not name.split('.')[-1].startswith(key) \
+            or 'mid_block' not in name.split('.'):
             continue
 
         if isinstance(module.processor, AttnProcessor):
@@ -613,6 +616,32 @@ def split_attn_maps(img_names, attn_maps_with_name):
 
 
 
+
+# Gaussian blur
+def gaussian_blur_2d(img, kernel_size, sigma):
+    ksize_half = (kernel_size - 1) * 0.5
+
+    x = torch.linspace(-ksize_half, ksize_half, steps=kernel_size)
+
+    pdf = torch.exp(-0.5 * (x / sigma).pow(2))
+
+    x_kernel = pdf / pdf.sum()
+    x_kernel = x_kernel.to(device=img.device, dtype=img.dtype)
+
+    kernel2d = torch.mm(x_kernel[:, None], x_kernel[None, :])
+    kernel2d = kernel2d.expand(img.shape[-3], 1, kernel2d.shape[0], kernel2d.shape[1])
+
+    padding = [kernel_size // 2, kernel_size // 2, kernel_size // 2, kernel_size // 2]
+
+    img = F.pad(img, padding, mode="reflect")
+    img = F.conv2d(img, kernel2d, groups=img.shape[-3])
+
+    return img
+
+
+def min_max_scaling(x):
+    new_x = (x-x.min())/ (x.max() - x.min())
+    return new_x
 
 if __name__=="__main__":
 
