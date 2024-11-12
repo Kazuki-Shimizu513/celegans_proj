@@ -28,9 +28,43 @@ from diffusers import StableDiffusionXLPipeline, StableDiffusionPipeline
 # )
 
 
+class CrossAttnStoreProcessor:
+    def __init__(self):
+        self.attn_map = None
 
+    def __call__(
+        self,
+        attn,
+        hidden_states,
+        encoder_hidden_states=None,
+        attention_mask=None,
+    ):
+        batch_size, sequence_length, _ = hidden_states.shape
+        attention_mask = attn.prepare_attention_mask(attention_mask, sequence_length, batch_size)
+        query = attn.to_q(hidden_states)
 
+        if encoder_hidden_states is None:
+            encoder_hidden_states = hidden_states
+        elif attn.norm_cross:
+            encoder_hidden_states = attn.norm_encoder_hidden_states(encoder_hidden_states)
 
+        key = attn.to_k(encoder_hidden_states)
+        value = attn.to_v(encoder_hidden_states)
+
+        query = attn.head_to_batch_dim(query)
+        key = attn.head_to_batch_dim(key)
+        value = attn.head_to_batch_dim(value)
+
+        self.attn_map = attn.get_attention_scores(query, key, attention_mask)
+        hidden_states = torch.bmm(self.attention_probs, value)
+        hidden_states = attn.batch_to_head_dim(hidden_states)
+
+        # linear proj
+        hidden_states = attn.to_out[0](hidden_states)
+        # dropout
+        hidden_states = attn.to_out[1](hidden_states)
+
+        return hidden_states
 
 def attn_call(
         self,
@@ -39,9 +73,8 @@ def attn_call(
         encoder_hidden_states=None,
         attention_mask=None,
         temb=None,
-        scale=1.0,
     ):
-    # print("success here attn call")
+    # print("success here attn call") # successed
     residual = hidden_states
 
     if attn.spatial_norm is not None:
@@ -61,15 +94,15 @@ def attn_call(
     if attn.group_norm is not None:
         hidden_states = attn.group_norm(hidden_states.transpose(1, 2)).transpose(1, 2)
 
-    query = attn.to_q(hidden_states, scale=scale)
+    query = attn.to_q(hidden_states)
 
     if encoder_hidden_states is None:
         encoder_hidden_states = hidden_states
     elif attn.norm_cross:
         encoder_hidden_states = attn.norm_encoder_hidden_states(encoder_hidden_states)
 
-    key = attn.to_k(encoder_hidden_states, scale=scale)
-    value = attn.to_v(encoder_hidden_states, scale=scale)
+    key = attn.to_k(encoder_hidden_states)
+    value = attn.to_v(encoder_hidden_states)
 
     query = attn.head_to_batch_dim(query)
     key = attn.head_to_batch_dim(key)
@@ -80,14 +113,15 @@ def attn_call(
     #ADD################################################################################################
     # (20,4096,77) or (40,1024,77)
     if hasattr(self, "store_attn_map"):
-        self.attn_map = attention_probs
+        # self.attn_map = attention_probs
+        setattr(self, 'attn_map', attention_probs)
     ####################################################################################################
 
     hidden_states = torch.bmm(attention_probs, value)
     hidden_states = attn.batch_to_head_dim(hidden_states)
 
     # linear proj
-    hidden_states = attn.to_out[0](hidden_states, scale=scale)
+    hidden_states = attn.to_out[0](hidden_states)
     # dropout
     hidden_states = attn.to_out[1](hidden_states)
 
@@ -132,7 +166,6 @@ def attn_call2_0(
         encoder_hidden_states=None,
         attention_mask=None,
         temb=None,
-        scale: float = 1.0,
     ):
     residual = hidden_states
 
@@ -158,15 +191,15 @@ def attn_call2_0(
     if attn.group_norm is not None:
         hidden_states = attn.group_norm(hidden_states.transpose(1, 2)).transpose(1, 2)
 
-    query = attn.to_q(hidden_states, scale=scale)
+    query = attn.to_q(hidden_states)
 
     if encoder_hidden_states is None:
         encoder_hidden_states = hidden_states
     elif attn.norm_cross:
         encoder_hidden_states = attn.norm_encoder_hidden_states(encoder_hidden_states)
 
-    key = attn.to_k(encoder_hidden_states, scale=scale)
-    value = attn.to_v(encoder_hidden_states, scale=scale)
+    key = attn.to_k(encoder_hidden_states)
+    value = attn.to_v(encoder_hidden_states)
 
     inner_dim = key.shape[-1]
     head_dim = inner_dim // attn.heads
@@ -196,7 +229,7 @@ def attn_call2_0(
     hidden_states = hidden_states.to(query.dtype)
 
     # linear proj
-    hidden_states = attn.to_out[0](hidden_states, scale=scale)
+    hidden_states = attn.to_out[0](hidden_states)
     # dropout
     hidden_states = attn.to_out[1](hidden_states)
 
@@ -261,53 +294,12 @@ def lora_attn_call2_0(self, attn: Attention, hidden_states, *args, **kwargs):
     return attn.processor(attn, hidden_states, *args, **kwargs)
 
 
-class CrossAttnStoreProcessor:
-    def __init__(self):
-        self.attn_map = None
-
-    def __call__(
-        self,
-        attn,
-        hidden_states,
-        encoder_hidden_states=None,
-        attention_mask=None,
-    ):
-        batch_size, sequence_length, _ = hidden_states.shape
-        attention_mask = attn.prepare_attention_mask(attention_mask, sequence_length, batch_size)
-        query = attn.to_q(hidden_states)
-
-        if encoder_hidden_states is None:
-            encoder_hidden_states = hidden_states
-        elif attn.norm_cross:
-            encoder_hidden_states = attn.norm_encoder_hidden_states(encoder_hidden_states)
-
-        key = attn.to_k(encoder_hidden_states)
-        value = attn.to_v(encoder_hidden_states)
-
-        query = attn.head_to_batch_dim(query)
-        key = attn.head_to_batch_dim(key)
-        value = attn.head_to_batch_dim(value)
-
-        self.attn_map = attn.get_attention_scores(query, key, attention_mask)
-        hidden_states = torch.bmm(self.attention_probs, value)
-        hidden_states = attn.batch_to_head_dim(hidden_states)
-
-        # linear proj
-        hidden_states = attn.to_out[0](hidden_states)
-        # dropout
-        hidden_states = attn.to_out[1](hidden_states)
-
-        return hidden_states
-
-
 def cross_attn_init():
     AttnProcessor.__call__ = attn_call
     AttnProcessor2_0.__call__ = attn_call # attn_call is faster
     LoRAAttnProcessor.__call__ = lora_attn_call
     LoRAAttnProcessor2_0.__call__ = lora_attn_call
 
-attn_maps = {}
-map_size = None
 def hook_fn(name):
     def forward_hook(module, input, output):
         if hasattr(module.processor, "attn_map"):
@@ -322,10 +314,10 @@ def hook_fn(name):
 
 def register_cross_attention_hook(unet, key='attn1',):
     for name, module in unet.named_modules():
-        if not name.split('.')[-1].startswith(key) \
-            or 'mid_block' not in name.split('.'):
+        if not name.split('.')[-1].startswith(key):
             continue
-
+        # print(name)
+        # print(module.processor)
         if isinstance(module.processor, AttnProcessor):
             module.processor.store_attn_map = True
         elif isinstance(module.processor, AttnProcessor2_0):
@@ -338,54 +330,6 @@ def register_cross_attention_hook(unet, key='attn1',):
         hook = module.register_forward_hook(hook_fn(name))
     
     return unet
-
-def register_cross_attention_hook_dm(unet, key='attentions',):
-    for name, module in unet.named_modules():
-        # if not name.split('.')[-1].startswith(key):
-        #     continue
-
-        if not hasattr(module, 'processor'):
-            continue
-
-        if isinstance(module.processor, AttnProcessor):
-            module.processor.store_attn_map = True
-        elif isinstance(module.processor, AttnProcessor2_0):
-            module.processor.store_attn_map = True
-        elif isinstance(module.processor, LoRAAttnProcessor):
-            module.processor.store_attn_map = True
-        elif isinstance(module.processor, LoRAAttnProcessor2_0):
-            module.processor.store_attn_map = True
-
-        hook = module.register_forward_hook(hook_fn(name))
-    
-    return unet
-
-
-def reshape_attn_map(attn_map):
-    attn_map = torch.mean(attn_map,dim=0) # mean by head dim: (20,4096,77) -> (4096,77)
-    attn_map = attn_map.permute(1,0) # (4096,77) -> (77,4096)
-    latent_size = int(math.sqrt(attn_map.shape[1]))
-    latent_shape = (attn_map.shape[0],latent_size,-1)
-    attn_map = attn_map.reshape(latent_shape) # (77,4096) -> (77,64,64)
-
-    return attn_map # torch.sum(attn_map,dim=0) = [1,1,...,1]
-
-
-
-def prompt2tokens(tokenizer, prompt):
-    text_inputs = tokenizer(
-        prompt,
-        padding="max_length",
-        max_length=tokenizer.model_max_length,
-        truncation=True,
-        return_tensors="pt",
-    )
-    text_input_ids = text_inputs.input_ids
-    tokens = []
-    for text_input_id in text_input_ids[0]:
-        token = tokenizer.decoder[text_input_id.item()]
-        tokens.append(token)
-    return tokens
 
 import math
 def upscale(attn_map, target_size):
@@ -438,63 +382,10 @@ def upscale2(attn_map, target_size):
     return attn_map
 
 
-def get_net_attn_map_dm(attn_maps_with_name, img_name, 
-                     batch_size=2, 
-                     instance_or_negative=False, detach=True,
-                     key='attentions',
-                     ):
-    # target_size = (image_size[0]//4, image_size[1]//4) #(64,64)
-    # target_size = (256,256) # explode memory
-    target_size = (64,64)
-
-    prev_name = ""
-    idx = 0 if instance_or_negative else 1
-    net_attn_maps = []
-    _attn_maps = {}
-    # TODO :: may be this part raise error :attn_maps
-    for idxx,  (name, attn_map) in enumerate(attn_maps.items()):
-
-        try:
-            if not name.split('.')[-2].startswith(key):
-                continue
-        except:
-            continue # TODO；このバケモン処理どうにかする
-
-        if name==prev_name:
-            prev_name = name
-            name=name+f"_{idxx}"
-        else:
-            prev_name = name
-
-        attn_map = attn_map.cpu() if detach else attn_map
-        attn_map = torch.chunk(attn_map, batch_size)[idx] # (20, 32*32, 77) -> (10, 32*32, 77) # negative & positive CFG
-        attn_map = (attn_map - attn_map.min()) / (attn_map.max() - attn_map.min())
-        _attn_maps[name] = attn_map
-
-        if len(attn_map.shape) == 4:
-            attn_map = attn_map.squeeze()
-
-        attn_map = upscale(attn_map, target_size) # (10,32*32,32*32) -> (32*32,64*64)
-        attn_map = upscale2(attn_map, target_size) # ADD:: (4096, 64*64) -> (64*64, 64*64)
-        attn_map = attn_map.sum(1, keepdim=False) # hw1
-        attn_map = attn_map.view(*target_size) 
- 
-        net_attn_maps.append(attn_map) # (10,32*32,77) -> (64,64)
-
-    net_attn_maps = torch.stack(net_attn_maps,dim=0)
-    # net_attn_maps = torch.mean(torch.stack(net_attn_maps,dim=0),dim=0)
-    # net_attn_maps = net_attn_maps.reshape(net_attn_maps.shape[0], 64,64) # (77,64*64) -> (77,64,64)
-
-    attn_maps_with_name[img_name] = _attn_maps
-
-
-    return net_attn_maps, attn_maps_with_name
-
-
-
 def get_net_attn_map(attn_maps_with_name, img_name, 
                      batch_size=2, 
-                     instance_or_negative=False, detach=True,
+                     instance_or_negative=False, 
+                     detach=True,
                      key='attn1',
                      ):
     # target_size = (image_size[0]//4, image_size[1]//4) #(64,64)
@@ -643,6 +534,18 @@ def min_max_scaling(x):
     new_x = (x-x.min())/ (x.max() - x.min())
     return new_x
 
+def get_store_processor(pipe,):
+    # Access Attention Processor
+    store_processor =None
+    for name, module in pipe.unet.named_modules(): # .attn_processors.items():
+        if not name.split('.')[-1].startswith("attn1"):
+            continue
+        if not name.split('.')[0].startswith("mid_blocks"):
+            continue
+        store_processor = module.processor
+    return store_processor
+
+
 if __name__=="__main__":
 
 
@@ -651,15 +554,19 @@ if __name__=="__main__":
 
     prompt = "."
 
-    cross_attn_init()
 
+    cross_attn_init()
     pipe = StableDiffusionPipeline.from_pretrained(
         "stabilityai/stable-diffusion-2",
         torch_dtype=torch.float16,
     ) 
 
+    attn_maps = {}
+    map_size = None
     pipe.unet = register_cross_attention_hook(pipe.unet)
     pipe = pipe.to("cuda")
+
+    # image = pipe(prompt, height=256, width=256, ).images[0]
 
     clean_image_pil = Image.open(img_path)
     clean_image = torchvision.transforms.functional.to_tensor(clean_image_pil)
@@ -673,30 +580,35 @@ if __name__=="__main__":
     clean_images = torch.unsqueeze(clean_image, 0)
     clean_images = clean_images.to("cuda")
     clean_images = clean_images.half() # float 64 -> float16 same to pipe params
-    print(clean_images.shape)
+    print(clean_images.shape) # size(1,3,256,256)
 
     posterior = pipe.vae.encode(clean_images, return_dict=False)[0]
     latent = posterior.sample()
     image = pipe(prompt, latents= latent, height=256, width=256, ).images[0]
 
-    attn_maps_with_name={}; img_name='test_name';
-    net_attn_maps, attn_maps_with_name = get_net_attn_map(attn_maps_with_name, img_name, batch_size=2,)
-    print(net_attn_maps.shape)
-    # net_attn_maps = resize_net_attn_map(net_attn_maps, image.size)
+    for name, attn_map in attn_maps.items():
+        print(name)
+        print(attn_map.shape)
 
-    save_net_attn_map(net_attn_maps, dir_name, )
-    clean_image_pil.save(dir_name + '/clean.png')
-    image.save(dir_name + '/test.png')
 
-    KL_THRESHOLD = [0.05]*3
-    REFINEMENT = True
-    NUM_POINTS = 24
-    img_names = [img_name,]
+#     attn_maps_with_name={}; img_name='test_name';
+#     net_attn_maps, attn_maps_with_name = get_net_attn_map(attn_maps_with_name, img_name, batch_size=2,)
+#     print(net_attn_maps.shape)
+#     # net_attn_maps = resize_net_attn_map(net_attn_maps, image.size)
 
-    weight_8_with_name, weight_16_with_name, weight_32_with_name, =  split_attn_maps(img_names, attn_maps_with_name)
-    segmentor = DiffSeg(KL_THRESHOLD, REFINEMENT, NUM_POINTS)
-    pred = segmentor.segment( weight_32_with_name[img_names[0]], weight_16_with_name[img_names[0]], weight_8_with_name[img_names[0]]) # b x 512 x 512
+#     save_net_attn_map(net_attn_maps, dir_name, )
+#     clean_image_pil.save(dir_name + '/clean.png')
+#     image.save(dir_name + '/test.png')
 
-    image_np = np.array(clean_image_pil)
-    print(image_np.shape, pred.shape)
+#     KL_THRESHOLD = [0.05]*3
+#     REFINEMENT = True
+#     NUM_POINTS = 24
+#     img_names = [img_name,]
+
+#     weight_8_with_name, weight_16_with_name, weight_32_with_name, =  split_attn_maps(img_names, attn_maps_with_name)
+#     segmentor = DiffSeg(KL_THRESHOLD, REFINEMENT, NUM_POINTS)
+#     pred = segmentor.segment( weight_32_with_name[img_names[0]], weight_16_with_name[img_names[0]], weight_8_with_name[img_names[0]]) # b x 512 x 512
+
+#     image_np = np.array(clean_image_pil)
+#     print(image_np.shape, pred.shape)
 
