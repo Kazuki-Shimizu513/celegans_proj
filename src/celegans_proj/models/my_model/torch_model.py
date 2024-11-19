@@ -8,10 +8,6 @@ import random
 import pickle
 import json
 import gc
-from weakref import (
-    WeakValueDictionary,   
-    WeakKeyDictionary,   
-)
 from pathlib import Path
 from collections import defaultdict
 from statistics import mean  # , stdev  #
@@ -21,9 +17,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 import torchvision
-from torchmetrics.functional.image import (
-    multiscale_structural_similarity_index_measure  as ms_ssim,
-)
+
 import numpy as np
 
 
@@ -43,7 +37,7 @@ from diffusers import (
 from diffusers.models.attention_processor import (
     AttnProcessor2_0,
 )
-from components import (
+from .components import (
     CrossAttnStoreProcessor,
 
     gaussian_blur_2d,
@@ -51,6 +45,8 @@ from components import (
     DiffSeg, 
     DiffSegParamModel,
 )
+from .anomaly_map import AnomalyMapGenerator
+
 torch.autograd.set_detect_anomaly(True)
 
 class MyTorchModel(nn.Module):
@@ -60,6 +56,7 @@ class MyTorchModel(nn.Module):
             seed =44,
             training = True,
             train_models=["VAE", "DDPM"],
+
 
             # Model General
             layers_per_block = 2,
@@ -112,7 +109,7 @@ class MyTorchModel(nn.Module):
             attention_type = "default",
 
             # DDPM Scheduler
-            ddpm_num_steps=1000,
+            ddpm_num_steps=10,# 1000,
             beta_start = 0.0001, 
             beta_end = 0.02,
             trained_betas = None,
@@ -136,7 +133,8 @@ class MyTorchModel(nn.Module):
             REFINEMENT=True,
 
             # Development
-            out_path = '/mnt/c/Users/compbio/Desktop/shimizudata/test/'
+            out_path = '/mnt/c/Users/compbio/Desktop/shimizudata/test/',
+            device="cuda",
 
     ) -> None:
         super().__init__()
@@ -148,9 +146,11 @@ class MyTorchModel(nn.Module):
         self.sag_scale=sag_scale
         self.NUM_POINTS=NUM_POINTS
         self.REFINEMENT=REFINEMENT
+        self.device = torch.device(device)
 
         self.out_path = out_path
 
+        self.anomaly_map_generator = AnomalyMapGenerator()
         # self.diffSegParamModel = DiffSegParamModel()
 
         vae = AutoencoderKL(
@@ -186,6 +186,7 @@ class MyTorchModel(nn.Module):
                 conv_in_kernel=conv_in_kernel,
                 conv_out_kernel=conv_out_kernel,
         )
+
         scheduler = DDPMScheduler(
             num_train_timesteps=ddpm_num_steps,
             beta_start =beta_start, 
@@ -225,7 +226,6 @@ class MyTorchModel(nn.Module):
             sd_sag_pipe.scheduler.config, scheduler.config, 
             "scheduler_config","my_scheduler_config"
         )
-
         # self.store_settings(text_encoder.config, "text_encoder_config")
         # self.store_settings(tokenizer.config, "tokenizer_config")
         # self.store_settings(feature_extractor.config, "feature_extractor_config")
@@ -242,7 +242,10 @@ class MyTorchModel(nn.Module):
             requires_safety_checker = False,
         )
         # self.pipe.set_progress_bar_config(disable=True)
+        self.pipe.to(device=self.device) # "cuda"
+
         self.generator = torch.Generator(device=self.pipe.device).manual_seed(seed)
+
 
     def check_settings(self, ref_cfg, cfg, title1, title2):
         self.store_settings(ref_cfg, title1)
@@ -291,10 +294,10 @@ class MyTorchModel(nn.Module):
         """
 
         # img = self.cvt_channel_gray2RGB(img)
-        print(f"{img.shape=}") 
+        # print(f"{img.shape=}") 
         posterior = self.pipe.vae.encode(img, return_dict=False)[0]
         latents = posterior.sample(generator=self.generator)
-        print(f"{latents.shape=}") #(64,32,32)
+        # print(f"{latents.shape=}") #(64,32,32)
 
         # Reconstruction
         # pred_latents= self.pipe( # for Debug
@@ -319,20 +322,19 @@ class MyTorchModel(nn.Module):
             pred_latents = latents.clone()
 
         pred_img = self.pipe.vae.decode(pred_latents/self.pipe.vae.config.scaling_factor, return_dict=False)[0]
-        print(f"{pred_img.shape=}")
-        return pred_img
+        # print(f"{pred_img.shape=}")
+        # print(f"{len(net_attn_maps)=}{net_attn_maps[0].keys()=}")
 
         # parts segmentation
         # TODO:: adaptive parameter for segmentation 
-        # TODO:: find somenwhat loss for backwards 
         KL_THRESHOLD = [0.003]*3 # self.diffSegParamModel(latents) 
         self.segmenter = DiffSeg(KL_THRESHOLD, self.REFINEMENT, self.NUM_POINTS)
         pred_mask = self.segment_with_attn_maps(net_attn_maps,)
 
         if self.training:
-            output = pred_img, pred_noises, noises, pred_latents, latents
+            output = img, pred_img, latents, pred_latents, noises, pred_noises, posterior
         else:
-            output = self.generate_anomaly_map(img, pred_img, pred_mask)
+            output = self.anomaly_map_generator(img, pred_img, pred_mask)
 
         return output
 
@@ -374,6 +376,7 @@ class MyTorchModel(nn.Module):
         device = self.pipe._execution_device
         do_classifier_free_guidance = self.guidance_scale > 1.0
         do_self_attention_guidance = self.sag_scale > 0.0
+        # print(f"{device=}")
 
         # TODO:: Prepare Image embeddings
 
@@ -408,7 +411,7 @@ class MyTorchModel(nn.Module):
         else:
             noisy_latents = latents.clone()
             timesteps = torch.Tensor([self.ddpm_num_steps] * len(latents))
-        print(f"{noisy_latents.shape=}\t{timesteps.shape=}")
+        # print(f"{noisy_latents.shape=}\t{timesteps.shape=}")
         pred_noises = torch.zeros_like(noises)
 
         # 2.3 Prepare latent variables with prompt_embeds
@@ -424,7 +427,7 @@ class MyTorchModel(nn.Module):
             noisy_latents,
         )
         pred_latents = noisy_latents.clone()
-        print(f"{noisy_latents.shape=}")
+        # print(f"{noisy_latents.shape=}")
 
         # 2.4. Prepare extra step kwargs. 
         extra_step_kwargs = self.pipe.prepare_extra_step_kwargs(self.generator, eta)
@@ -436,7 +439,7 @@ class MyTorchModel(nn.Module):
         self.set_attn_processor(attn_proc_name="CrossAttnStoreProcessor")
 
         # Memory Collect
-        process = psutil.Process(os.getpid())
+        # process = psutil.Process(os.getpid())
         gc.enable() # Just In Case
         gc.collect()
 
@@ -447,10 +450,9 @@ class MyTorchModel(nn.Module):
                 latent = latent.unsqueeze(0)
                 # 3.1.3 Register hook function 
                 # self.register_cross_attention_hook()
-                print(f"resister_hook Memory usage: {process.memory_info().rss / 1024 ** 2} MB")
+                # print(f"resister_hook Memory usage: {process.memory_info().rss / 1024 ** 2} MB")
                 # print(f"IN Denoising Loop: {latent.shape=} {timestep=} {idx=}")
-                _attn_maps = WeakValueDictionary({})
-                # attn_maps = WeakValueDictionary({})
+                _attn_maps = {}
                 attn_maps = {}
 
                 # 4. Execute Denoising Loop
@@ -458,7 +460,7 @@ class MyTorchModel(nn.Module):
                     # 4.1 expand the latents if we are doing classifier free guidance
                     latent_model_input = torch.cat([latent] * 2) if do_classifier_free_guidance else latent
                     latent_model_input = self.pipe.scheduler.scale_model_input(latent_model_input, t)
-                    print(f"latent_model_input Memory usage: {process.memory_info().rss / 1024 ** 2} MB")
+                    # print(f"latent_model_input Memory usage: {process.memory_info().rss / 1024 ** 2} MB")
                     # print(f"{latent_model_input.shape=}\t{prompt_embeds.shape=}")
 
                     # 4.2 predict the noise residual
@@ -468,14 +470,14 @@ class MyTorchModel(nn.Module):
                         t,
                         encoder_hidden_states=prompt_embeds,
                     ).sample
-                    print(f"predict noise unet Memory usage: {process.memory_info().rss / 1024 ** 2} MB")
+                    # print(f"predict noise unet Memory usage: {process.memory_info().rss / 1024 ** 2} MB")
 
                     # 4.3 perform guidance
                     if do_classifier_free_guidance:
                         noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
                         noise_pred = noise_pred_uncond \
                             + self.guidance_scale * (noise_pred_text - noise_pred_uncond)
-                    print(f"classifer free guidance Memory usage: {process.memory_info().rss / 1024 ** 2} MB")
+                    # print(f"classifer free guidance Memory usage: {process.memory_info().rss / 1024 ** 2} MB")
 
                     # 4.4 perform self-attention guidance with the stored self-attention map
                     if do_self_attention_guidance:
@@ -507,7 +509,7 @@ class MyTorchModel(nn.Module):
 
                             # get the stored attention maps
                             cond_attn, attn_maps, map_size = self.get_attn_map(attn_maps)
-                            print(f"get attn map Memory usage: {process.memory_info().rss / 1024 ** 2} MB")
+                            # print(f"get attn map Memory usage: {process.memory_info().rss / 1024 ** 2} MB")
 
                             # self-attention-based degrading of latents
                             degraded_latent, attn_mask, attn_map= self.sag_masking(
@@ -515,7 +517,7 @@ class MyTorchModel(nn.Module):
                                 torch.Tensor([t]).to(torch.int32), 
                                 self.pipe.pred_epsilon(latent, noise_pred, t)
                             )
-                            print(f"sag_masking Memory usage: {process.memory_info().rss / 1024 ** 2} MB")
+                            # print(f"sag_masking Memory usage: {process.memory_info().rss / 1024 ** 2} MB")
 
                             # forward and give guidance
                             degraded_pred = self.pipe.unet(
@@ -523,12 +525,12 @@ class MyTorchModel(nn.Module):
                                 t,
                                 encoder_hidden_states=prompt_embeds,
                             ).sample
-                            print(f"sag_unet Memory usage: {process.memory_info().rss / 1024 ** 2} MB")
+                            # print(f"sag_unet Memory usage: {process.memory_info().rss / 1024 ** 2} MB")
                             noise_pred = noise_pred + self.sag_scale * (noise_pred - degraded_pred)
-                            print(f"noise_pred Memory usage: {process.memory_info().rss / 1024 ** 2} MB")
+                            # print(f"noise_pred Memory usage: {process.memory_info().rss / 1024 ** 2} MB")
 
                     # Update attn_maps
-                    _attn_maps = self.update_attn_maps(_attn_maps, attn_maps, timestep)# , process)
+                    _attn_maps = self.update_attn_maps(_attn_maps, attn_maps, timestep.cpu())# , process)
                     
                     # compute the previous noisy sample x_t -> x_t-1
                     latent = self.pipe.scheduler.step(noise_pred, t, latent, **extra_step_kwargs).prev_sample
@@ -538,7 +540,7 @@ class MyTorchModel(nn.Module):
                     # print(f"{len(attn_maps.keys())=}\t{len(_attn_maps.keys())==len(attn_maps.keys())}")
                     # del noise_pred, t, degraded_pred, degraded_latent,cond_attn, map_size, pred_x0 
                     # gc.collect()
-                    print(f"end of timestep loop Memory usage: {process.memory_info().rss / 1024 ** 2} MB\n\n")
+                    # print(f"end of timestep loop Memory usage: {process.memory_info().rss / 1024 ** 2} MB\n\n")
 
                     # Update progress bar
                     progress_bar.update()
@@ -574,7 +576,7 @@ class MyTorchModel(nn.Module):
             if not name.split('.')[-1].startswith("attn1"):
                 continue
             if hasattr(module.processor, "attn_map"):
-                attn_maps[name] = module.processor.attn_map.clone()
+                attn_maps[name] = module.processor.attn_map.detach().clone()#.cpu().numpy()
                 # print(f"In get_attn_map:{name=}\t")
                 del module.processor.attn_map
                 # print(f"In get_attn_map:{attn_maps[name].shape=}\t")
@@ -583,7 +585,7 @@ class MyTorchModel(nn.Module):
                 continue
 
             # print(f"In get_attn_map:{attn_maps.keys()=}\t")
-            mid_attn_map = attn_maps[name].clone() 
+            mid_attn_map = attn_maps[name].clone().to(device=self.device) # .copy() # 
             # map_size = module.processor.map_size 
             # print(f"In get_attn_map:{map_size=}\t{type(map_size)=}") # (16,1280) #TODO:WTF
             # del module.processor.map_size
@@ -694,43 +696,45 @@ class MyTorchModel(nn.Module):
  
     def segment_with_attn_maps(self,net_attn_maps,):
         pred_masks = []
-        for i in range(len(net_attn_maps)):
-            weight_8, weight_16, weight_32 = self.split_attn_maps(i, net_attn_maps,)
+        for attn_maps in net_attn_maps:
+            weight_4, weight_8, weight_16, weight_32 = self.split_attn_maps(attn_maps,)
             # ([1, 2, 1024, 1024])
             pred = self.segmenter.segment( 
                                      weight_32.detach().numpy(),
                                      weight_16.detach().numpy(),
                                      weight_8.detach().numpy(),
+                                     weight_4.detach().numpy(),
                             ) # b x 512 x 512
-            pred_masks.append(pred)
+            pred_masks.append(torch.Tensor(pred))
         pred_masks = torch.stack(pred_masks, dim=0)
         return pred_masks
 
-    def split_attn_maps(self, i, net_attn_maps,
+    def split_attn_maps(self, attn_maps,
         detach=True, instance_or_negative=False,batch_size=2,
         ):
         idx = 0 if instance_or_negative else 1
         weight_4=[];weight_8=[];weight_16=[];weight_32=[];
-        for name, attn_map in net_attn_maps[i].items():
+        for name, attn_map in attn_maps.items():
             attn_map = attn_map.cpu() if detach else attn_map
             # attn_map = torch.chunk(attn_map, batch_size)[idx] # (20, 32*32, 77) -> (10, 32*32, 77) # negative & positive CFG
             if len(attn_map.shape) == 4:
                 attn_map = attn_map.squeeze()
             size = np.sqrt(attn_map.shape[-2])
             # print(f"{name=}\t{attn_map.shape=}\t{size=}")
-            # if size == 4:
-            #     weight_4.append(attn_map)
+            if size == 4:
+                weight_4.append(attn_map)
             if size == 8:
                 weight_8.append(attn_map)
             if size == 16:
                 weight_16.append(attn_map)
             if size == 32:
                 weight_32.append(attn_map)
-        # print(f"{len(weight_8)=}\t{len(weight_16)=}\t{len(weight_32)=}")
+        # print(f"{len(weight_4)=}\t{len(weight_8)=}\t{len(weight_16)=}\t{len(weight_32)=}")
+        weight_4 = torch.mean(torch.stack(weight_4,dim=0),dim=0, keepdim=True,) # (5,2,64,64) -> (1,2,64,64)
         weight_8 = torch.mean(torch.stack(weight_8,dim=0),dim=0, keepdim=True,) # (5,2,64,64) -> (1,2,64,64)
         weight_16 = torch.mean(torch.stack(weight_16,dim=0),dim=0, keepdim=True,)
         weight_32 = torch.mean(torch.stack(weight_32,dim=0),dim=0, keepdim=True,)
-        return weight_8, weight_16, weight_32,
+        return weight_4, weight_8, weight_16, weight_32,
 
 
     def generate_anomaly_map(self, img, pred_img,pred_mask):
@@ -759,15 +763,18 @@ class MyTorchModel(nn.Module):
 
 if __name__ == "__main__":
     # __debug__ = True # when you execute without any option 
-    B = 2
+    B = 1
     C,W,H = (1,256,256)
-    img = torch.randn(B,C,W,H,)
+    cuda_0 = torch.device("cuda:0")
+
+    img = torch.randn(B,C,W,H,).to(device=cuda_0)
     print(f"{img.shape=}")
 
-    model = MyTorchModel()
+    model = MyTorchModel().to(device=cuda_0)
     # model = torch.compile(model)
 
     # output = model.generate()
     output = model(img)
     print(f"{output[0].shape=}")
+    print(f"{output[1].shape=}")
 

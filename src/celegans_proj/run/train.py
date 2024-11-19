@@ -33,6 +33,7 @@ from celegans_proj.run.image.wddd2 import (
 ) 
 
 from celegans_proj.models import (
+    MyModel,
     SimSID,
 )
 
@@ -40,6 +41,7 @@ logger = logging.getLogger(__name__)
 
 torch.set_float32_matmul_precision("medium")
 torch._dynamo.config.suppress_errors = True
+torch._dynamo.config.capture_scalar_outputs = True
 
 # wandb.login()
 
@@ -128,8 +130,14 @@ def train(
             pre_trained = True,
         )
     elif model_name == "SimSID":
-
         model = SimSID()
+    elif model_name == "MyModel":
+        model = MyModel(
+            training = True,
+            learning_rate = 1e-8,
+            train_models=["VAE", "DDPM",],
+            out_path = str(out_dir),
+        )
     else:
         logger.info("please give model_name Patchcore or ReverseDistillation or SimSID")
         return 0
@@ -158,13 +166,12 @@ if __name__ == "__main__":
     logging.basicConfig(filename='./logs/debug.log', filemode='w', level=logging.DEBUG)
 
     # exp_name  = "exp_example"
-    # exp_name  = "exp_20241109"
-    exp_name  = "exp_20241110"
+    exp_name  = "exp_20241119"
 
     out_dir = "/mnt/c/Users/compbio/Desktop/shimizudata/"
     log_dir  = "./logs"
     in_dir = "/mnt/e/WDDD2_AD"
-    model_name = "SimSID"
+    model_name = "MyModel"
     target_data = "wildType"
     threshold =  "F1AdaptiveThreshold"
     metric_name = "pixel_AUROC"
@@ -190,8 +197,8 @@ if __name__ == "__main__":
         metric_name = metric_name,
 
         ckpt = None, 
-        batch = 16,
-        resolution =  128, # 256,#
+        batch = 1,
+        resolution =  256,
         task = TaskType.SEGMENTATION, #CLASSIFICATION,#
         worker = 30,
     )

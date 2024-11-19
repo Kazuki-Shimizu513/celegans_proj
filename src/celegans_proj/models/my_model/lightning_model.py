@@ -10,6 +10,7 @@ from anomalib import LearningType
 from anomalib.models.components import AnomalyModule
 
 from .torch_model import MyTorchModel
+from .loss import MyLoss
 
 
 class MyModel(AnomalyModule):
@@ -21,40 +22,168 @@ class MyModel(AnomalyModule):
 
     def __init__(
         self,
-        backbone: str = "wide_resnet50_2",
-        layers: Sequence[str] = ("layer1", "layer2", "layer3"),
+
+        training = True,
+        learning_rate = 1e-8,
+        train_models=["VAE", "DDPM",],
+
+        # Reproducibility
+        seed =44,
         pre_trained: bool = True,
+        # Development
+        out_path = '/mnt/c/Users/compbio/Desktop/shimizudata/test/',
+        # device = "cuda:0",
+
 
     ) -> None:
         super().__init__()
 
-        self.backbone = backbone
-        self.pre_trained = pre_trained
-        self.layers = layers
+        # Reproducibility
+        self.seed = seed # 44,
+        self.training = training # True,
+        self.learning_rate = learning_rate 
+        self.train_models= train_models # ["VAE", "DDPM",],
 
+        # Development
+        self.out_path = out_path
+        # self.device = device
+
+        self.pre_trained = pre_trained
         self.model: MyTorchModel
-        self.loss = torch.nn.MSELoss()
+
+        self.loss = MyLoss()# torch.nn.MSELoss()
 
     def _setup(self) -> None:
 
         self.model = MyTorchModel(
-            backbone=self.backbone,
-            pre_trained=self.pre_trained,
-            layers=self.layers,
-            input_size=self.input_size,
+
+            # Reproducibility
+            seed =self.seed,
+            training = self.training,
+            train_models=self.train_models,
+
+            # Development
+            out_path = self.out_path,
+            # device=self.device, 
+
+            # Model General
+            layers_per_block = 2,
+            act_fn = "silu",
+            sample_size = 32,
+
+            # VAE
+            vae_in_channels = 1,
+            vae_out_channels = 1,
+            vae_down_block_types = (
+                                "DownEncoderBlock2D",
+                                "DownEncoderBlock2D",
+                                "DownEncoderBlock2D",
+                                "DownEncoderBlock2D",
+                            ),
+            vae_up_block_types = (
+                                "UpDecoderBlock2D",
+                                "UpDecoderBlock2D",
+                                "UpDecoderBlock2D",
+                                "UpDecoderBlock2D",
+                            ),
+            vae_block_out_channels = (64, 128, 256, 256),
+            vae_latent_channels = 64,
+            vae_norm_num_groups = 64,
+            scaling_factor = 1, # 0.18215,
+            force_upcast = True,
+
+            # DDPM Unet
+            unet_down_block_types = (
+                                "CrossAttnDownBlock2D",
+                                "CrossAttnDownBlock2D",
+                                "CrossAttnDownBlock2D",
+                                "DownBlock2D",
+                                ),
+            unet_mid_block_type = "UNetMidBlock2DCrossAttn",
+            unet_up_block_types = (
+                                "UpBlock2D",
+                                "CrossAttnUpBlock2D", 
+                                "CrossAttnUpBlock2D", 
+                                "CrossAttnUpBlock2D",
+                             ),
+            unet_attention_head_dim = (5, 10, 20, 20),
+            unet_block_out_channels = (320, 640, 1280, 1280),# 
+            # unet_block_out_channels = (32, 64, 128, 128), # 
+            unet_cross_attention_dim= 1024,
+            resnet_time_scale_shift = "default",
+            time_embedding_type = "positional",
+            conv_in_kernel = 3,
+            conv_out_kernel = 3,
+            attention_type = "default",
+
+            # DDPM Scheduler
+            ddpm_num_steps=10,# 1000,
+            beta_start = 0.0001, 
+            beta_end = 0.02,
+            trained_betas = None,
+            beta_schedule="linear",
+            variance_type = 'fixed_small',
+            clip_sample = True,
+            clip_sample_range = 1.0,
+            prediction_type="epsilon",
+            timestep_spacing = 'leading',
+            steps_offset = 0,
+
+            # StableDiffusionSAG
+            model_id = "stabilityai/stable-diffusion-2",
+            guidance_scale=0.0, 
+            sag_scale=1.0, 
+
+            # DiffSeg
+            ## DiffSegParamModel
+            # KL_THRESHOLD=[0.0027]*3,
+            NUM_POINTS=2,
+            REFINEMENT=True,
+
         )
 
-    def configure_optimizers(self) -> optim.Adam:
+
+    def configure_optimizers(self) :
         """Configure optimizers for decoder and bottleneck.
 
         Returns:
             Optimizer: Adam optimizer for each decoder
         """
-        return optim.Adam(
-            params=list(self.model.decoder.parameters()) + list(self.model.bottleneck.parameters()),
-            lr=0.005,
-            betas=(0.5, 0.99),
+
+        if "vae" in self.train_models  and "diffusion" in self.train_models:
+            params = list(self.model.pipe.unet.parameters()) \
+                + list(self.model.pipe.vae.parameters())
+        elif "vae" in self.train_models:
+            params = self.model.pipe.vae.parameters()
+        else:
+            params = self.model.pipe.unet.parameters()
+
+        optimizer = torch.optim.AdamW(
+            params,
+            lr=self.learning_rate,
+            betas=(0.95, 0.999),
+            eps=1e-08,
         )
+
+        # from diffusers.optimization import get_scheduler
+        # lr_scheduler = get_scheduler(
+        #     "cosine",
+        #     optimizer=optimizer,
+        #     num_warmup_steps=50,
+        # )
+
+        opt_settings = [
+            {
+                "optimizer": optimizer,
+                # "lr_scheduler": {
+                #     "scheduler": lr_scheduler,
+                #     'monitor': 'val_loss',
+                #     'interval': 'epoch',
+                # }
+            },
+        ]
+
+        return tuple(opt_settings)
 
     def training_step(self, batch: dict[str, str | torch.Tensor], batch_idx, *args, **kwargs) -> STEP_OUTPUT:
         """Perform a training step 
@@ -89,25 +218,29 @@ class MyModel(AnomalyModule):
           These are required in `validation_epoch_end` for feature concatenation.
         """
 
-        batch["anomaly_maps"] = self.model(batch["image"])
+        output = self.model(batch["image"])
+        # Add anomaly maps and predicted scores to the batch.
+
+        batch["anomaly_maps"] = output["anomaly_map"]
+        batch["pred_scores"] = output["pred_score"]
         return batch
 
-    def predict_step(self, batch: dict[str, str | torch.Tensor], *args, **kwargs) -> STEP_OUTPUT:
-        """Perform a prediction step
+#     def predict_step(self, batch: dict[str, str | torch.Tensor], *args, **kwargs) -> STEP_OUTPUT:
+#         """Perform a prediction step
 
-        Args:
-          batch (dict[str, str | torch.Tensor]): Input batch
-            batch_idx : Input Batch index
-          args: Additional arguments.
-          kwargs: Additional keyword arguments.
+#         Args:
+#           batch (dict[str, str | torch.Tensor]): Input batch
+#             batch_idx : Input Batch index
+#           args: Additional arguments.
+#           kwargs: Additional keyword arguments.
 
-        Returns:
-          Dictionary containing images, anomaly maps, true labels and masks.
-          These are required in `predict_epoch_end` for feature concatenation.
-        """
+#         Returns:
+#           Dictionary containing images, anomaly maps, true labels and masks.
+#           These are required in `predict_epoch_end` for feature concatenation.
+#         """
 
-        batch["anomaly_maps"] = self.model(batch["image"])
-        return batch
+#         batch["anomaly_maps"] = self.model(batch["image"])
+#         return batch
 
 
     @property
