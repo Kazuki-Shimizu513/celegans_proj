@@ -10,6 +10,10 @@
 #   universal: false
 
 -e file:.
+absl-py==2.1.0
+    # via keras
+    # via tensorboard
+    # via tensorflow
 aiohappyeyeballs==2.4.3
     # via aiohttp
 aiohttp==3.10.10
@@ -26,6 +30,8 @@ anomalib==1.2.0
     # via celegans-proj
 antlr4-python3-runtime==4.9.3
     # via omegaconf
+astunparse==1.6.3
+    # via tensorflow
 attrs==24.2.0
     # via aiohttp
 certifi==2024.8.30
@@ -56,6 +62,8 @@ filelock==3.16.1
     # via torch
     # via transformers
     # via triton
+flatbuffers==24.3.25
+    # via tensorflow
 fonttools==4.54.1
     # via matplotlib
 freia==0.2
@@ -70,12 +78,21 @@ fsspec==2024.10.0
     # via torch
 ftfy==6.3.1
     # via open-clip-torch
+gast==0.6.0
+    # via tensorflow
 gitdb==4.0.11
     # via gitpython
 gitpython==3.1.43
     # via wandb
+google-pasta==0.2.0
+    # via tensorflow
+grpcio==1.67.1
+    # via tensorboard
+    # via tensorflow
 h5py==3.12.1
     # via celegans-proj
+    # via keras
+    # via tensorflow
 huggingface-hub==0.26.2
     # via diffusers
     # via open-clip-torch
@@ -102,6 +119,8 @@ jsonargparse==4.33.2
     # via anomalib
 kaleido==0.2.1
     # via celegans-proj
+keras==3.6.0
+    # via tensorflow
 kiwisolver==1.4.7
     # via matplotlib
 kornia==0.7.4
@@ -110,6 +129,8 @@ kornia-rs==0.1.7
     # via kornia
 lazy-loader==0.4
     # via scikit-image
+libclang==18.1.1
+    # via tensorflow
 lightning==2.4.0
     # via celegans-proj
 lightning-utilities==0.11.8
@@ -117,20 +138,28 @@ lightning-utilities==0.11.8
     # via lightning
     # via pytorch-lightning
     # via torchmetrics
+markdown==3.7
+    # via tensorboard
 markdown-it-py==3.0.0
     # via rich
 markupsafe==3.0.2
     # via jinja2
+    # via werkzeug
 matplotlib==3.9.2
     # via celegans-proj
     # via imgaug
 mdurl==0.1.2
     # via markdown-it-py
+ml-dtypes==0.4.1
+    # via keras
+    # via tensorflow
 mpmath==1.3.0
     # via sympy
 multidict==6.1.0
     # via aiohttp
     # via yarl
+namex==0.0.8
+    # via keras
 networkx==3.4.2
     # via scikit-image
     # via torch
@@ -144,7 +173,9 @@ numpy==1.26.4
     # via h5py
     # via imageio
     # via imgaug
+    # via keras
     # via matplotlib
+    # via ml-dtypes
     # via opencv-python
     # via opencv-python-headless
     # via pandas
@@ -152,6 +183,8 @@ numpy==1.26.4
     # via scikit-learn
     # via scipy
     # via shapely
+    # via tensorboard
+    # via tensorflow
     # via tifffile
     # via torchmetrics
     # via torchvision
@@ -195,8 +228,13 @@ opencv-python==4.10.0.84
 opencv-python-headless==4.10.0.84
     # via albucore
     # via albumentations
+opt-einsum==3.4.0
+    # via tensorflow
+optree==0.13.1
+    # via keras
 packaging==24.1
     # via huggingface-hub
+    # via keras
     # via kornia
     # via lazy-loader
     # via lightning
@@ -205,6 +243,8 @@ packaging==24.1
     # via plotly
     # via pytorch-lightning
     # via scikit-image
+    # via tensorboard
+    # via tensorflow
     # via torchmetrics
     # via transformers
 pandas==2.2.3
@@ -223,6 +263,8 @@ plotly==5.24.1
 propcache==0.2.0
     # via yarl
 protobuf==5.28.3
+    # via tensorboard
+    # via tensorflow
     # via wandb
 psutil==6.1.0
     # via wandb
@@ -260,10 +302,12 @@ regex==2024.9.11
 requests==2.32.3
     # via diffusers
     # via huggingface-hub
+    # via tensorflow
     # via transformers
     # via wandb
 rich==13.9.4
     # via anomalib
+    # via keras
     # via rich-argparse
 rich-argparse==1.6.0
     # via anomalib
@@ -288,6 +332,8 @@ setproctitle==1.3.3
     # via wandb
 setuptools==75.3.0
     # via lightning-utilities
+    # via tensorboard
+    # via tensorflow
     # via torch
     # via wandb
 shapely==2.0.6
@@ -295,9 +341,13 @@ shapely==2.0.6
 simsimd==6.0.1
     # via albucore
 six==1.16.0
+    # via astunparse
     # via docker-pycreds
+    # via google-pasta
     # via imgaug
     # via python-dateutil
+    # via tensorboard
+    # via tensorflow
 smmap==5.0.1
     # via gitdb
 stringzilla==3.10.7
@@ -308,6 +358,14 @@ tabulate==0.9.0
     # via celegans-proj
 tenacity==9.0.0
     # via plotly
+tensorboard==2.18.0
+    # via tensorflow
+tensorboard-data-server==0.7.2
+    # via tensorboard
+tensorflow==2.18.0
+    # via celegans-proj
+termcolor==2.5.0
+    # via tensorflow
 threadpoolctl==3.5.0
     # via scikit-learn
 tifffile==2024.9.20
@@ -354,9 +412,11 @@ typing-extensions==4.12.2
     # via huggingface-hub
     # via lightning
     # via lightning-utilities
+    # via optree
     # via pydantic
     # via pydantic-core
     # via pytorch-lightning
+    # via tensorflow
     # via torch
     # via typeshed-client
 tzdata==2024.2
@@ -368,6 +428,12 @@ wandb==0.18.5
     # via celegans-proj
 wcwidth==0.2.13
     # via ftfy
+werkzeug==3.1.3
+    # via tensorboard
+wheel==0.45.0
+    # via astunparse
+wrapt==1.16.0
+    # via tensorflow
 yarl==1.17.1
     # via aiohttp
 zipp==3.21.0

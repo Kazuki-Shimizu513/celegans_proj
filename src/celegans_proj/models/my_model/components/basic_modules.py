@@ -29,8 +29,14 @@ from diffusers import StableDiffusionXLPipeline, StableDiffusionPipeline
 
 
 class CrossAttnStoreProcessor:
+    """
+    https://github.com/huggingface/diffusers/blob/main/src/diffusers/models/attention_processor.py#L2659
+    https://github.com/huggingface/diffusers/blob/main/src/diffusers/models/attention_processor.py#L755
+    """
     def __init__(self):
+        self.map_size = None # output[0].shape[-2:]
         self.attn_map = None
+        self.store_attn_map = True
 
     def __call__(
         self,
@@ -55,8 +61,16 @@ class CrossAttnStoreProcessor:
         key = attn.head_to_batch_dim(key)
         value = attn.head_to_batch_dim(value)
 
-        self.attn_map = attn.get_attention_scores(query, key, attention_mask)
-        hidden_states = torch.bmm(self.attention_probs, value)
+        attention_probs = attn.get_attention_scores(query, key, attention_mask)
+
+        ##ADD#############################################
+        ## (20,4096,77) or (40,1024,77)
+        if hasattr(self, "store_attn_map"):
+            # print(self.__class__.__name__)
+            self.attn_map = attention_probs.clone()
+        ##################################################
+
+        hidden_states = torch.bmm(attention_probs, value)
         hidden_states = attn.batch_to_head_dim(hidden_states)
 
         # linear proj
@@ -65,6 +79,20 @@ class CrossAttnStoreProcessor:
         hidden_states = attn.to_out[1](hidden_states)
 
         return hidden_states
+
+
+
+
+
+
+
+
+
+##########################################################################
+# deprecated, may be...
+#########################################################################
+
+
 
 def attn_call(
         self,
@@ -110,12 +138,11 @@ def attn_call(
 
     attention_probs = attn.get_attention_scores(query, key, attention_mask)
 
-    #ADD################################################################################################
-    # (20,4096,77) or (40,1024,77)
+    ##ADD################################################################################################
+    ## (20,4096,77) or (40,1024,77)
     if hasattr(self, "store_attn_map"):
-        # self.attn_map = attention_probs
         setattr(self, 'attn_map', attention_probs)
-    ####################################################################################################
+    #####################################################################################################
 
     hidden_states = torch.bmm(attention_probs, value)
     hidden_states = attn.batch_to_head_dim(hidden_states)
@@ -300,24 +327,11 @@ def cross_attn_init():
     LoRAAttnProcessor.__call__ = lora_attn_call
     LoRAAttnProcessor2_0.__call__ = lora_attn_call
 
-def hook_fn(name):
-    def forward_hook(module, input, output):
-        if hasattr(module.processor, "attn_map"):
-            attn_maps[name] = module.processor.attn_map
-            del module.processor.attn_map
-
-        if 'mid_block' in name.split('.'):
-            # nonlocal map_size
-            global  map_size
-            map_size = output[0].shape[-2:]
-    return forward_hook
-
-def register_cross_attention_hook(unet, key='attn1',):
+def _register_cross_attention_hook(unet, key='attn1',):
     for name, module in unet.named_modules():
         if not name.split('.')[-1].startswith(key):
             continue
-        # print(name)
-        # print(module.processor)
+
         if isinstance(module.processor, AttnProcessor):
             module.processor.store_attn_map = True
         elif isinstance(module.processor, AttnProcessor2_0):
@@ -327,9 +341,19 @@ def register_cross_attention_hook(unet, key='attn1',):
         elif isinstance(module.processor, LoRAAttnProcessor2_0):
             module.processor.store_attn_map = True
 
-        hook = module.register_forward_hook(hook_fn(name))
+        hook = module.register_forward_hook(_hook_fn(name))
     
     return unet
+
+def _hook_fn(name):
+    def forward_hook(module, input, output):
+        # if hasattr(module.processor, "attn_map"):
+            # attn_maps[name] = module.processor.attn_map
+            # del module.processor.attn_map
+        if 'mid_block' in name.split('.')\
+        and 'attn1' in name.split('.'):
+            module.processor.map_size = output[0].shape[-2:]
+    return forward_hook
 
 import math
 def upscale(attn_map, target_size):
