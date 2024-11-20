@@ -107,8 +107,8 @@ class MyModel(AnomalyModule):
                                 "CrossAttnUpBlock2D",
                              ),
             unet_attention_head_dim = (5, 10, 20, 20),
-            unet_block_out_channels = (320, 640, 1280, 1280),# 
-            # unet_block_out_channels = (32, 64, 128, 128), # 
+            # unet_block_out_channels = (320, 640, 1280, 1280),# 
+            unet_block_out_channels = (64, 128, 256, 512), # 
             unet_cross_attention_dim= 1024,
             resnet_time_scale_shift = "default",
             time_embedding_type = "positional",

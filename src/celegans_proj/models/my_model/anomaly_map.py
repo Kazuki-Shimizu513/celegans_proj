@@ -9,7 +9,6 @@ from torchmetrics.functional.image import (
     peak_signal_noise_ratio as PSNR,
 )
 
-from .loss import MyLoss
 
 class AnomalyMapGenerator(nn.Module):
     """Generate Anomaly Heatmap.
@@ -29,7 +28,6 @@ class AnomalyMapGenerator(nn.Module):
     ) -> None:
         super().__init__()
         self.image_size = image_size if isinstance(image_size, tuple) else tuple(image_size)
-        self.loss  = MyLoss()
 
     def forward(
         self, 

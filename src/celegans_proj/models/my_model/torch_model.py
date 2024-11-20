@@ -37,6 +37,7 @@ from diffusers import (
 from diffusers.models.attention_processor import (
     AttnProcessor2_0,
 )
+# from components import (
 from .components import (
     CrossAttnStoreProcessor,
 
@@ -45,6 +46,7 @@ from .components import (
     DiffSeg, 
     DiffSegParamModel,
 )
+# from anomaly_map import AnomalyMapGenerator
 from .anomaly_map import AnomalyMapGenerator
 
 torch.autograd.set_detect_anomaly(True)
@@ -99,8 +101,8 @@ class MyTorchModel(nn.Module):
                                 "CrossAttnUpBlock2D",
                              ),
             unet_attention_head_dim = (5, 10, 20, 20),
-            unet_block_out_channels = (320, 640, 1280, 1280),# 
-            # unet_block_out_channels = (32, 64, 128, 128), # 
+            # unet_block_out_channels = (320, 640, 1280, 1280),# 
+            unet_block_out_channels = (64, 128, 256, 512), # 
             unet_cross_attention_dim= 1024,
             resnet_time_scale_shift = "default",
             time_embedding_type = "positional",

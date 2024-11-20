@@ -142,7 +142,7 @@ def train(
         logger.info("please give model_name Patchcore or ReverseDistillation or SimSID")
         return 0
 
-    model = torch.compile(model)
+    # model = torch.compile(model)
 
     print("prepareing Trainer")
     engine = Engine(
