@@ -12,26 +12,11 @@ from torchmetrics.functional.image import (
 
 class AnomalyMapGenerator(nn.Module):
     """Generate Anomaly Heatmap.
-
-    Args:
-        image_size (ListConfig, tuple): Size of original image used for upscaling the anomaly map.
-        sigma (int): Standard deviation of the gaussian kernel used to smooth anomaly map.
-            Defaults to ``4``.
-
-    Raises:
-        ValueError: In case modes other than multiply and add are passed.
     """
-
-    def __init__(
-        self,
-        image_size: tuple = (256,256),
-    ) -> None:
-        super().__init__()
-        self.image_size = image_size if isinstance(image_size, tuple) else tuple(image_size)
 
     def forward(
         self, 
-        img, pred_img, pred_mask
+        imgs, pred_imgs, pred_masks=None,
     ) -> torch.Tensor:
         """Compute anomaly map given encoder and decoder features.
 
@@ -44,18 +29,23 @@ class AnomalyMapGenerator(nn.Module):
         """
 
 
-        anomaly_map = self.compute_recon_distance(
-                        pred_img, img, 
+        anomaly_maps = self.compute_recon_distance(
+                        pred_imgs, imgs, 
                         mode = "L2", 
                         perceptual = False, 
                       )
 
-        # TODO :: Class Histgram Maharanobis Distance using pred_mask
+        # TODO :: Cosine Distance using wildtype feature and test feature cropped by pred_mask
+        # TODO :: or Class Histgram Maharanobis Distance using pred_mask
 
+        pred_scores = self.compute_metrics(
+                          pred_imgs, imgs, 
+                          anomaly_maps, 
+                          pred_masks, 
+                          mode="psnr",
+        )
 
-        pred_score = self.compute_metrics(pred_img, img, pred_mask, anomaly_map, mode="psnr")
-
-        output =  {"anomaly_map": anomaly_map, "pred_score": pred_score}
+        output =  {"anomaly_map": anomaly_maps, "pred_score": pred_scores}
         return output 
 
     @staticmethod
@@ -86,23 +76,29 @@ class AnomalyMapGenerator(nn.Module):
     def compute_metrics(
         self,
         pred_imgs, imgs,
-        pred_masks,
-        anomaly_maps,
+        anomaly_maps=None,
+        pred_masks=None,
         mode = "psnr", 
     ):
-        # Calc_psnr metrics
-        scores = []
-        for idx, (prd, img, amp, msk) in enumerate(zip(
-                pred_imgs, imgs, anomaly_maps, pred_masks
-        )):
-            if mode == "psnr":
-                score = PSNR(prd, img)
-            else:
-                score = torch.max(amp) # anomaly_map
-            scores.append(torch.Tensor(score))
-        scores = torch.stack(scores, dim=0)
-        return scores
 
+        assert pred_imgs.shape == imgs.shape,\
+            f"{pred_imgs.shape=}\t{imgs.shape=}"
+
+
+
+        if mode == "psnr":
+            # Calc_psnr metrics
+            scores = []
+            for pred, img in zip(pred_imgs, imgs):
+                score = PSNR(pred, img, )
+                scores.append(score)
+            scores = torch.stack(scores, dim=0)
+        else:
+            scores = torch.max(anomaly_maps, dim=0)
+
+        # TODO:: add metric for segmentation mask 
+
+        return scores
 
 
 

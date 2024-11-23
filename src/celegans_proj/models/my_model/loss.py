@@ -9,6 +9,8 @@ from torchmetrics.functional.image import (
 )
 # from torchmetrics.functional.image.lpips import learned_perceptual_image_patch_similarity as lpips
 
+from .torch_model import MyTorchModel
+
 class MyLoss(nn.Module):
     """Loss function """
     def __init__(
@@ -31,9 +33,8 @@ class MyLoss(nn.Module):
     def forward(
         self,
         imgs, pred_imgs,
-        latents=None, pred_latents=None,
+        latents, pred_latents,posterior,
         noises=None, pred_noises=None,
-        posterior=None,
     ) -> torch.Tensor:
         """
 

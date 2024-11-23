@@ -582,7 +582,7 @@ def transform_images(examples):
 
 if __name__ == "__main__":
 
-    logging.basicConfig(filename='./debug.log', filemode='w', level=logging.DEBUG)
+    logging.basicConfig(filename='./logs/debug.log', filemode='w', level=logging.DEBUG)
 
 #     img_list = pd.read_csv(img_set_path)["img_path"].unique()
 #     mean_list = YouTransform.get_volume_mean(img_list)
@@ -614,18 +614,22 @@ if __name__ == "__main__":
         category = "wildType",
         train_batch_size = 32,
         eval_batch_size = 32,
-        num_workers = 8,
-        task = TaskType.CLASSIFICATION,#  SEGMENTATION,
+        num_workers = 30,
+        task = TaskType.SEGMENTATION,# CLASSIFICATION,#  
         image_size = (256,256),
         transform = transforms,
         seed  = 44,
     )
+    datamodule.setup()
+    # "train_data", "val_data", "test_data"
+    for attribute in ("train_data", "val_data", "test_data"):
+        data_loader = getattr(datamodule,attribute)
+        i, batch = next(enumerate(data_loader))
 
-    # datamodule.setup()
-
-    i, data = next(enumerate(datamodule.train_dataloader()))
-
-    logger.debug(data.keys())
-    logger.debug(data["image"].shape)
+        print(batch.keys()) # dict_keys(['image_path', 'label', 'image', 'mask'])
+        print(batch["image_path"])
+        print(batch["label"])
+        print(batch["image"].shape)
+        print(batch["image"].shape)
 
 

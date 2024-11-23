@@ -105,13 +105,13 @@ def train(
         category = target_data,
         train_batch_size = batch,
         eval_batch_size = batch,
-        test_split_mode=TestSplitMode.SYNTHETIC,
         num_workers = worker, 
         task = TaskType.SEGMENTATION,#CLASSIFICATION,#  
         image_size = (resolution,resolution),
         transform = transforms,
         seed  = 44,
     )
+    datamodule.setup()
 
     print("prepareing model")
 
@@ -135,7 +135,7 @@ def train(
         model = MyModel(
             training = True,
             learning_rate = 1e-8,
-            train_models=["VAE", "DDPM",],
+            train_models=["vae", "diffusion", ],
             out_path = str(out_dir),
         )
     else:

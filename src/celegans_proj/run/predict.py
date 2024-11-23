@@ -117,6 +117,7 @@ def predict(
         transform = transforms,
         seed  = 44,
     )
+    datamodule.setup()
 
     print("prepareing model")
 

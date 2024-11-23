@@ -1,11 +1,9 @@
-
 import sys
 import os
 import shutil
 import psutil
 import math
 import random
-import pickle
 import json
 import gc
 from pathlib import Path
@@ -17,10 +15,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 import torchvision
+from torchvision.transforms import v2
 
 import numpy as np
 
-
+from PIL import Image
 import cv2
 import matplotlib.pyplot as plt
 
@@ -37,17 +36,27 @@ from diffusers import (
 from diffusers.models.attention_processor import (
     AttnProcessor2_0,
 )
-# from components import (
-from .components import (
+from transformers import (
+    CLIPTokenizer,
+    CLIPTextConfig,
+    CLIPTextModel,
+    CLIPImageProcessor, 
+    CLIPVisionConfig,
+    CLIPVisionModelWithProjection
+    # CLIPConfig,
+    # CLIPModel,
+)
+from components import (
+# from .components import (
     CrossAttnStoreProcessor,
 
     gaussian_blur_2d,
-    min_max_scaling,
+    # min_max_scaling,
     DiffSeg, 
     DiffSegParamModel,
 )
-# from anomaly_map import AnomalyMapGenerator
-from .anomaly_map import AnomalyMapGenerator
+from anomaly_map import AnomalyMapGenerator
+# from .anomaly_map import AnomalyMapGenerator
 
 torch.autograd.set_detect_anomaly(True)
 
@@ -57,7 +66,7 @@ class MyTorchModel(nn.Module):
             # Reproducibility
             seed =44,
             training = True,
-            train_models=["VAE", "DDPM"],
+            train_models=["vae", "diffusion"],
 
 
             # Model General
@@ -72,15 +81,13 @@ class MyTorchModel(nn.Module):
                                 "DownEncoderBlock2D",
                                 "DownEncoderBlock2D",
                                 "DownEncoderBlock2D",
-                                "DownEncoderBlock2D",
                             ),
             vae_up_block_types = (
                                 "UpDecoderBlock2D",
                                 "UpDecoderBlock2D",
                                 "UpDecoderBlock2D",
-                                "UpDecoderBlock2D",
                             ),
-            vae_block_out_channels = (64, 128, 256, 256),
+            vae_block_out_channels = (64, 128, 256),
             vae_latent_channels = 64,
             vae_norm_num_groups = 64,
             scaling_factor = 1, # 0.18215,
@@ -102,7 +109,7 @@ class MyTorchModel(nn.Module):
                              ),
             unet_attention_head_dim = (5, 10, 20, 20),
             # unet_block_out_channels = (320, 640, 1280, 1280),# 
-            unet_block_out_channels = (64, 128, 256, 512), # 
+            unet_block_out_channels = (32, 64, 128, 256), # 
             unet_cross_attention_dim= 1024,
             resnet_time_scale_shift = "default",
             time_embedding_type = "positional",
@@ -111,7 +118,7 @@ class MyTorchModel(nn.Module):
             attention_type = "default",
 
             # DDPM Scheduler
-            ddpm_num_steps=10,# 1000,
+            ddpm_num_steps=5, # 10,# 1000,
             beta_start = 0.0001, 
             beta_end = 0.02,
             trained_betas = None,
@@ -127,15 +134,18 @@ class MyTorchModel(nn.Module):
             model_id = "stabilityai/stable-diffusion-2",
             guidance_scale=0.0, 
             sag_scale=1.0, 
+            map_size = (8,8),
+            # map_size = (4,4),
+
 
             # DiffSeg
             ## DiffSegParamModel
-            # KL_THRESHOLD=[0.0027]*3,
+            # KL_THRESHOLD=[0.0027]*4,
             NUM_POINTS=2,
             REFINEMENT=True,
 
             # Development
-            out_path = '/mnt/c/Users/compbio/Desktop/shimizudata/test/',
+            out_path = '/mnt/c/Users/compbio/Desktop/shimizudata/test',
             device="cuda",
 
     ) -> None:
@@ -146,6 +156,7 @@ class MyTorchModel(nn.Module):
         self.ddpm_num_steps = ddpm_num_steps
         self.guidance_scale=guidance_scale
         self.sag_scale=sag_scale
+        self.map_size = map_size
         self.NUM_POINTS=NUM_POINTS
         self.REFINEMENT=REFINEMENT
         self.device = torch.device(device)
@@ -203,13 +214,62 @@ class MyTorchModel(nn.Module):
             steps_offset=steps_offset,
         )
 
+        # tokenizer = CLIPTokenizer()
+        text_config = CLIPTextConfig(
+            vocab_size=49408,
+            hidden_size=1024,# 512,
+            intermediate_size=2048,
+            projection_dim=1024,# 512,
+            num_hidden_layers=1,# 12,
+            num_attention_heads=8,
+            max_position_embeddings=77,
+            hidden_act="quick_gelu",
+            layer_norm_eps=1e-5,
+            attention_dropout=0.0,
+            initializer_range=0.02,
+            initializer_factor=1.0,
+            # This differs from `CLIPTokenizer`'s default and from openai/clip
+            # See https://github.com/huggingface/transformers/pull/24773#issuecomment-1632287538
+            pad_token_id=1,
+            bos_token_id=49406,
+            eos_token_id=49407,
+        )
+        text_encoder = CLIPTextModel(text_config)
+        # feature_extractor = CLIPImageProcessor(
+        #     do_resize= True,
+        #     size = None,
+        #     do_center_crop = True,
+        #     do_rescale = True,
+        #     rescale_factor = 1 / 255,
+        #     do_normalize = True,
+        #     image_mean = None,
+        #     image_std = None,
+        #     do_convert_rgb = True,
+        # )
+        vision_config = CLIPVisionConfig(
+            hidden_size=1024,# 768,
+            intermediate_size=3072,
+            projection_dim=1024,# 512,
+            num_hidden_layers=1,# 12,
+            num_attention_heads=8, # 12,
+            num_channels=1, # 3,
+            image_size=256,# 224,
+            patch_size=32,
+            hidden_act="quick_gelu",
+            layer_norm_eps=1e-5,
+            attention_dropout=0.0,
+            initializer_range=0.02,
+            initializer_factor=1.0,
+        )
+        image_encoder = CLIPVisionModelWithProjection(vision_config)
+
         sd_sag_pipe = StableDiffusionSAGPipeline.from_pretrained(
             model_id,
             torch_dtype=torch.float32,
         )
         # https://github.com/huggingface/transformers/tree/v4.46.2/src/transformers/models/clip
-        text_encoder = sd_sag_pipe.text_encoder #CLIPTextEncoder
         tokenizer = sd_sag_pipe.tokenizer #CLIPTokenizer
+        # text_encoder = sd_sag_pipe.text_encoder #CLIPTextEncoder
         feature_extractor = sd_sag_pipe.feature_extractor #CLIPImageProcessor
         # vae = sd_sag_pipe.vae
         # unet = sd_sag_pipe.unet
@@ -241,9 +301,10 @@ class MyTorchModel(nn.Module):
             scheduler, 
             safety_checker,
             feature_extractor,
+            image_encoder,
             requires_safety_checker = False,
         )
-        # self.pipe.set_progress_bar_config(disable=True)
+        self.pipe.set_progress_bar_config(disable=True)
         self.pipe.to(device=self.device) # "cuda"
 
         self.generator = torch.Generator(device=self.pipe.device).manual_seed(seed)
@@ -261,7 +322,7 @@ class MyTorchModel(nn.Module):
         self.store_settings(not_dict, "diffs_"+title1+"_"+title2)
 
     def store_settings(self, config_dict, title_without_json):
-        with open(str(self.out_path)+str(title_without_json)+".json", "w") as f:
+        with open(str(self.out_path)+f"/{str(title_without_json)}.json", "w") as f:
             json.dump(config_dict, f, indent=4, sort_keys=True)
 
 
@@ -287,7 +348,7 @@ class MyTorchModel(nn.Module):
     def cvt_channel_gray2RGB(self,x):
         return x.repeat(1, 3, 1, 1)
 
-    def forward(self, img, prompt="."):
+    def forward(self, imgs, prompt="."):
         """ forward function for my torch model
             args:
                 Bach: which contains image, label, mask,
@@ -295,11 +356,9 @@ class MyTorchModel(nn.Module):
                 Bach: which contains image, mask, label, pred_image, pred_mask,  prediction_score, anomaly_map,
         """
 
-        # img = self.cvt_channel_gray2RGB(img)
-        # print(f"{img.shape=}") 
-        posterior = self.pipe.vae.encode(img, return_dict=False)[0]
+        # imgs = self.cvt_channel_gray2RGB(imgs)
+        posterior = self.pipe.vae.encode(imgs, return_dict=False)[0]
         latents = posterior.sample(generator=self.generator)
-        # print(f"{latents.shape=}") #(64,32,32)
 
         # Reconstruction
         # pred_latents= self.pipe( # for Debug
@@ -315,28 +374,47 @@ class MyTorchModel(nn.Module):
         #     return_dict = False,
         # )[0]
 
-        pred_noises, noises, pred_latents, noisy_latents, net_attn_maps= self.diffusion_step(
-            latents, 
-            prompt, 
-            num_images_per_prompt = 1,  # SAG for each latent
-        )
-        if "DDPM" not in self.train_models:
+        if "diffusion" not in self.train_models:
             pred_latents = latents.clone()
+        else:
+            # guidance_scale = 0.0
+            # sag_scale = 0.0
+ 
+            if self.training:
+                guidance_scale = 0.0
+                sag_scale = 0.0
+            else:
+                guidance_scale = self.guidance_scale
+                sag_scale = self.sag_scale
 
-        pred_img = self.pipe.vae.decode(pred_latents/self.pipe.vae.config.scaling_factor, return_dict=False)[0]
-        # print(f"{pred_img.shape=}")
-        # print(f"{len(net_attn_maps)=}{net_attn_maps[0].keys()=}")
+            pred_noises, noises, pred_latents, noisy_latents, net_attn_maps= self.diffusion_step(
+                latents, 
+                prompt, 
+                guidance_scale = guidance_scale, #  7.5,
+                sag_scale = sag_scale,#  0.75,
+                num_images_per_prompt = 1,  # SAG for each latent
+            )
 
-        # parts segmentation
-        # TODO:: adaptive parameter for segmentation 
-        KL_THRESHOLD = [0.003]*3 # self.diffSegParamModel(latents) 
-        self.segmenter = DiffSeg(KL_THRESHOLD, self.REFINEMENT, self.NUM_POINTS)
-        pred_mask = self.segment_with_attn_maps(net_attn_maps,)
+            # parts segmentation
+            # TODO:: adaptive parameter for segmentation 
+            KL_THRESHOLD = [0.003]*4 # self.diffSegParamModel(latents)  # KL_len is besaed on attn_weights len
+            self.segmenter = DiffSeg(KL_THRESHOLD, self.REFINEMENT, self.NUM_POINTS)
+            pred_masks = self.segment_with_attn_maps(net_attn_maps,)
+
+        pred_imgs = self.pipe.vae.decode(pred_latents/self.pipe.vae.config.scaling_factor, return_dict=False)[0]
+
+        # TODO:: register_outputs in the way of dict , not tuple
+
 
         if self.training:
-            output = img, pred_img, latents, pred_latents, noises, pred_noises, posterior
+            if "vae" in self.train_models and "diffusion" in self.train_models:
+                output = imgs, pred_imgs, latents, pred_latents, posterior, noises, pred_noises
+            elif "vae" in self.train_models:
+                output = imgs, pred_imgs, latents, pred_latents, posterior
+            else:
+                output = imgs, pred_imgs, latents, pred_latents, posterior, noises, pred_noises
         else:
-            output = self.anomaly_map_generator(img, pred_img, pred_mask)
+            output = self.anomaly_map_generator(imgs, pred_imgs)
 
         return output
 
@@ -344,6 +422,8 @@ class MyTorchModel(nn.Module):
         self,
         latents, 
         prompt,
+        guidance_scale = 2.0,
+        sag_scale = 1.0,
         eta=0.0,
         num_images_per_prompt = 1, # Batch_size
     ) -> tuple[torch.Tensor]:
@@ -376,9 +456,8 @@ class MyTorchModel(nn.Module):
         else:
             batch_size = prompt_embeds.shape[0]
         device = self.pipe._execution_device
-        do_classifier_free_guidance = self.guidance_scale > 1.0
-        do_self_attention_guidance = self.sag_scale > 0.0
-        # print(f"{device=}")
+        do_classifier_free_guidance = guidance_scale > 1.0
+        do_self_attention_guidance = sag_scale > 0.0
 
         # TODO:: Prepare Image embeddings
 
@@ -391,29 +470,22 @@ class MyTorchModel(nn.Module):
         )
         if do_classifier_free_guidance:
             prompt_embeds = torch.cat([negative_prompt_embeds, prompt_embeds])
-        # prompt_embeds = prompt_embeds.to(torch.float32) # (B, text_dim(77), unet_cross_attention_dim(1024))
-        # assart prompt_embeds.shape==( \
-        # B, self.pipe.text_encoder.config.text_dim,
-        # self.pipe.unet.config.cross_attention_dim ),
-        # f"{prompt_embeds.shape}"
-        # assartion is ebanled when __debug__==True
 
 
 
         # 2. ADD Noise to latents and Sample Gaussian Noise 
+        # 2.1 Sample a random timestep and Nose
+        self.pipe.scheduler.set_timesteps(self.ddpm_num_steps, device=device)
+        noises = torch.randn(latents.shape).to(latents.device)
+        # 2.2 ADD Noise to latents for random timestep
         if self.training:
-            # 2.1 Sample a random timestep and Nose
-            self.pipe.scheduler.set_timesteps(self.ddpm_num_steps, device=device)
             bsz = latents.shape[0]  # batch_size
             timesteps = torch.randint(1, self.ddpm_num_steps, (bsz,), 
                                           device=latents.device,).long()
-            noises = torch.randn(latents.shape).to(latents.device)
-            # 2.2 ADD Noise to latents for random timestep
             noisy_latents = self.pipe.scheduler.add_noise(latents, noises, timesteps)
         else:
-            noisy_latents = latents.clone()
             timesteps = torch.Tensor([self.ddpm_num_steps] * len(latents))
-        # print(f"{noisy_latents.shape=}\t{timesteps.shape=}")
+            noisy_latents = latents.clone()
         pred_noises = torch.zeros_like(noises)
 
         # 2.3 Prepare latent variables with prompt_embeds
@@ -429,7 +501,6 @@ class MyTorchModel(nn.Module):
             noisy_latents,
         )
         pred_latents = noisy_latents.clone()
-        # print(f"{noisy_latents.shape=}")
 
         # 2.4. Prepare extra step kwargs. 
         extra_step_kwargs = self.pipe.prepare_extra_step_kwargs(self.generator, eta)
@@ -440,46 +511,62 @@ class MyTorchModel(nn.Module):
         original_attn_proc = self.pipe.unet.attn_processors
         self.set_attn_processor(attn_proc_name="CrossAttnStoreProcessor")
 
-        # Memory Collect
-        # process = psutil.Process(os.getpid())
-        gc.enable() # Just In Case
-        gc.collect()
-
         # 4. Execute Denoising Loop
         net_attn_maps = []
-        with self.pipe.progress_bar(total=timesteps.sum().item()) as progress_bar:
+
+        num_total = noisy_latents.shape[0] # timesteps.sum().item()
+        with self.pipe.progress_bar(total=num_total) as progress_bar:
             for idx, (latent, timestep) in enumerate(zip(noisy_latents, timesteps)):
                 latent = latent.unsqueeze(0)
-                # 3.1.3 Register hook function 
-                # self.register_cross_attention_hook()
-                # print(f"resister_hook Memory usage: {process.memory_info().rss / 1024 ** 2} MB")
-                # print(f"IN Denoising Loop: {latent.shape=} {timestep=} {idx=}")
+                timestep = int(timestep.item())
                 _attn_maps = {}
                 attn_maps = {}
+                if self.training:
+                    # 4.1 expand the latents if we are doing classifier free guidance
+                    latent_model_input = torch.cat([latent] * 2) if do_classifier_free_guidance else latent
+                    latent_model_input = self.pipe.scheduler.scale_model_input(latent_model_input, timestep)
+
+                    # 4.2 predict the noise residual
+                    noise_pred = self.pipe.unet(
+                        latent_model_input,
+                        timestep,
+                        encoder_hidden_states=prompt_embeds,
+                    ).sample
+                    mid_attn_map, attn_maps, map_size = self.get_attn_map(attn_maps)
+
+                    # Update attn_maps
+                    _attn_maps = self.update_attn_maps(_attn_maps, attn_maps, timestep)
+                    
+                    # compute the original sample x_t -> x_0
+                    latent = self.pipe.scheduler.step(noise_pred, timestep, latent, **extra_step_kwargs).pred_original_sample
+                    pred_noises[idx] = pred_noises[idx] + noise_pred.squeeze(0) / timestep
+                    pred_latents[idx] = latent.squeeze(0).clone()
+                    net_attn_maps.append(_attn_maps)
+
+                    # Update progress bar
+                    progress_bar.update()
+                    continue
+
 
                 # 4. Execute Denoising Loop
                 for i, t in enumerate(list(reversed(range(timestep)))):
                     # 4.1 expand the latents if we are doing classifier free guidance
                     latent_model_input = torch.cat([latent] * 2) if do_classifier_free_guidance else latent
                     latent_model_input = self.pipe.scheduler.scale_model_input(latent_model_input, t)
-                    # print(f"latent_model_input Memory usage: {process.memory_info().rss / 1024 ** 2} MB")
-                    # print(f"{latent_model_input.shape=}\t{prompt_embeds.shape=}")
 
                     # 4.2 predict the noise residual
-                    # TODO:: something wrong with Unet which leaks some cpu memory
                     noise_pred = self.pipe.unet(
                         latent_model_input,
                         t,
                         encoder_hidden_states=prompt_embeds,
                     ).sample
-                    # print(f"predict noise unet Memory usage: {process.memory_info().rss / 1024 ** 2} MB")
+                    mid_attn_map, attn_maps, map_size = self.get_attn_map(attn_maps)
 
                     # 4.3 perform guidance
                     if do_classifier_free_guidance:
                         noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
                         noise_pred = noise_pred_uncond \
-                            + self.guidance_scale * (noise_pred_text - noise_pred_uncond)
-                    # print(f"classifer free guidance Memory usage: {process.memory_info().rss / 1024 ** 2} MB")
+                            + guidance_scale * (noise_pred_text - noise_pred_uncond)
 
                     # 4.4 perform self-attention guidance with the stored self-attention map
                     if do_self_attention_guidance:
@@ -488,7 +575,6 @@ class MyTorchModel(nn.Module):
                             pred_x0 = self.pipe.pred_x0(latent, noise_pred_uncond, t)
 
                             # get the stored attention maps
-                            mid_attn_map, attn_maps, map_size = self.get_attn_map(attn_maps)
                             uncond_attn, cond_attn = mid_attn_map.chunk(2)
 
                             # self-attention-based degrading of latents
@@ -499,19 +585,14 @@ class MyTorchModel(nn.Module):
                             )
                             uncond_emb, _ = prompt_embeds.chunk(2)
                             # forward and give guidance
-                            degraded_pred = self.pipe.unet(
-                                degraded_latent,
-                                t,
-                                encoder_hidden_states=uncond_emb,
-                            ).sample
-                            noise_pred = noise_pred + self.sag_scale * (noise_pred_uncond - degraded_pred)
+                            degraded_pred = self.pipe.unet(degraded_latent,t,encoder_hidden_states=uncond_emb,).sample
+                            noise_pred = noise_pred + sag_scale * (noise_pred_uncond - degraded_pred)
                         else:
                             # DDIM-like prediction of x0
                             pred_x0 = self.pipe.pred_x0(latent, noise_pred, t) # pred_latents0
 
                             # get the stored attention maps
-                            cond_attn, attn_maps, map_size = self.get_attn_map(attn_maps)
-                            # print(f"get attn map Memory usage: {process.memory_info().rss / 1024 ** 2} MB")
+                            cond_attn = mid_attn_map
 
                             # self-attention-based degrading of latents
                             degraded_latent, attn_mask, attn_map= self.sag_masking(
@@ -519,38 +600,25 @@ class MyTorchModel(nn.Module):
                                 torch.Tensor([t]).to(torch.int32), 
                                 self.pipe.pred_epsilon(latent, noise_pred, t)
                             )
-                            # print(f"sag_masking Memory usage: {process.memory_info().rss / 1024 ** 2} MB")
 
                             # forward and give guidance
-                            degraded_pred = self.pipe.unet(
-                                degraded_latent,
-                                t,
-                                encoder_hidden_states=prompt_embeds,
-                            ).sample
-                            # print(f"sag_unet Memory usage: {process.memory_info().rss / 1024 ** 2} MB")
-                            noise_pred = noise_pred + self.sag_scale * (noise_pred - degraded_pred)
-                            # print(f"noise_pred Memory usage: {process.memory_info().rss / 1024 ** 2} MB")
+                            degraded_pred = self.pipe.unet(degraded_latent,t,encoder_hidden_states=prompt_embeds,).sample
+                            noise_pred = noise_pred + sag_scale * (noise_pred - degraded_pred)
 
                     # Update attn_maps
-                    _attn_maps = self.update_attn_maps(_attn_maps, attn_maps, timestep.cpu())# , process)
+                    _attn_maps = self.update_attn_maps(_attn_maps, attn_maps, timestep)# , process)
                     
                     # compute the previous noisy sample x_t -> x_t-1
                     latent = self.pipe.scheduler.step(noise_pred, t, latent, **extra_step_kwargs).prev_sample
                     pred_noises[idx] = pred_noises[idx] + noise_pred.squeeze(0) / timestep
 
-                    # Memory Collect
-                    # print(f"{len(attn_maps.keys())=}\t{len(_attn_maps.keys())==len(attn_maps.keys())}")
-                    # del noise_pred, t, degraded_pred, degraded_latent,cond_attn, map_size, pred_x0 
-                    # gc.collect()
-                    # print(f"end of timestep loop Memory usage: {process.memory_info().rss / 1024 ** 2} MB\n\n")
-
-                    # Update progress bar
-                    progress_bar.update()
-
                 pred_latents[idx] = latent.squeeze(0).clone()
                 net_attn_maps.append(_attn_maps)
-                # del attn_maps, _attn_maps, latent, timestep, 
-                # gc.collect()
+
+                # Update progress bar
+                progress_bar.update()
+
+
 
         self.pipe.maybe_free_model_hooks()
         # make sure to set the original attention processors back
@@ -579,20 +647,18 @@ class MyTorchModel(nn.Module):
                 continue
             if hasattr(module.processor, "attn_map"):
                 attn_maps[name] = module.processor.attn_map.detach().clone()#.cpu().numpy()
-                # print(f"In get_attn_map:{name=}\t")
                 del module.processor.attn_map
                 # print(f"In get_attn_map:{attn_maps[name].shape=}\t")
-                gc.collect()
+                # gc.collect()
             if not name.split('.')[0].startswith("mid_block"):
                 continue
 
-            # print(f"In get_attn_map:{attn_maps.keys()=}\t")
             mid_attn_map = attn_maps[name].clone().to(device=self.device) # .copy() # 
             # map_size = module.processor.map_size 
             # print(f"In get_attn_map:{map_size=}\t{type(map_size)=}") # (16,1280) #TODO:WTF
             # del module.processor.map_size
-        map_size = (4,4)
-        gc.collect()
+        map_size = self.map_size
+        # gc.collect()
         return mid_attn_map, attn_maps, map_size
 
     def update_attn_maps(self, _attn_maps, attn_maps, timestep):# , process):
@@ -603,7 +669,7 @@ class MyTorchModel(nn.Module):
             for name in _attn_maps.keys():
                 _attn_maps[name] = _attn_maps[name] + attn_maps[name]/timestep
         del attn_maps
-        gc.collect()
+        # gc.collect()
         return _attn_maps
 
     def register_cross_attention_hook(self, key='attn1',):
@@ -699,26 +765,32 @@ class MyTorchModel(nn.Module):
     def segment_with_attn_maps(self,net_attn_maps,):
         pred_masks = []
         for attn_maps in net_attn_maps:
-            weight_4, weight_8, weight_16, weight_32 = self.split_attn_maps(attn_maps,)
-            # ([1, 2, 1024, 1024])
+            weights_dict = self.split_attn_maps(attn_maps,)
+            # weight_size depends on VAE layer num
+            # self.store_attn_map(weights_dict)
+            
             pred = self.segmenter.segment( 
-                                     weight_32.detach().numpy(),
-                                     weight_16.detach().numpy(),
-                                     weight_8.detach().numpy(),
-                                     weight_4.detach().numpy(),
+                                     weights_dict["weight_64"].detach().numpy(),
+                                     weights_dict["weight_32"].detach().numpy(),
+                                     weights_dict["weight_16"].detach().numpy(),
+                                     weights_dict["weight_8"].detach().numpy(),
+                                     # weights_dict["weight_4"].detach().numpy(),
                             ) # b x 512 x 512
             pred_masks.append(torch.Tensor(pred))
         pred_masks = torch.stack(pred_masks, dim=0)
         return pred_masks
 
+    def store_attn_map(self,weights_dict, out_name_without_pt="attention_maps"):
+        torch.save(weights_dict,self.out_path + f'/{out_name_without_pt}.pt')
+
     def split_attn_maps(self, attn_maps,
         detach=True, instance_or_negative=False,batch_size=2,
         ):
         idx = 0 if instance_or_negative else 1
-        weight_4=[];weight_8=[];weight_16=[];weight_32=[];
+        weight_4=[];weight_8=[];weight_16=[];weight_32=[];weight_64=[];
         for name, attn_map in attn_maps.items():
             attn_map = attn_map.cpu() if detach else attn_map
-            # attn_map = torch.chunk(attn_map, batch_size)[idx] # (20, 32*32, 77) -> (10, 32*32, 77) # negative & positive CFG
+            attn_map = torch.chunk(attn_map, batch_size)[idx] # (20, 32*32, 77) -> (10, 32*32, 77) # negative & positive CFG
             if len(attn_map.shape) == 4:
                 attn_map = attn_map.squeeze()
             size = np.sqrt(attn_map.shape[-2])
@@ -731,52 +803,58 @@ class MyTorchModel(nn.Module):
                 weight_16.append(attn_map)
             if size == 32:
                 weight_32.append(attn_map)
-        # print(f"{len(weight_4)=}\t{len(weight_8)=}\t{len(weight_16)=}\t{len(weight_32)=}")
-        weight_4 = torch.mean(torch.stack(weight_4,dim=0),dim=0, keepdim=True,) # (5,2,64,64) -> (1,2,64,64)
-        weight_8 = torch.mean(torch.stack(weight_8,dim=0),dim=0, keepdim=True,) # (5,2,64,64) -> (1,2,64,64)
-        weight_16 = torch.mean(torch.stack(weight_16,dim=0),dim=0, keepdim=True,)
-        weight_32 = torch.mean(torch.stack(weight_32,dim=0),dim=0, keepdim=True,)
-        return weight_4, weight_8, weight_16, weight_32,
+            if size == 64:
+                weight_64.append(attn_map)
 
-
-    def generate_anomaly_map(self, img, pred_img,pred_mask):
-        diff = self.calc_difference(img, pred_img, mode="L1",)
-        # TODO : 予測マスクのクラスに応じて，Pred_imgを向上させ，異常マップを出力
-
-        output = diff
-        return output
-
-    def calc_difference(self, target, pred, mode="L1"):
-        assert pred.shape == target.shape,\
-            f"{pred.shape=}\t{target.shape=}"
-
-        diffs=0
-        if mode=="L1":
-           # https://note.nkmk.me/python-opencv-numpy-image-difference/
-           diffs = np.abs(pred - target) 
-        elif mode == "L2":
-           diffs = np.sqrt((pred - target)**2) 
-        else:
-            print("please check mode attr in calc difference method")
-
-        assert diffs.shape == target.shape,\
-            f"{diffs.shape=}\t{target.shape=}"
-        return diffs
+        weights_dict = dict(
+            # weight_4=torch.mean(torch.stack(weight_4,dim=0),dim=0, keepdim=True,),
+            weight_8=torch.mean(torch.stack(weight_8,dim=0),dim=0, keepdim=True,),
+            weight_16=torch.mean(torch.stack(weight_16,dim=0),dim=0, keepdim=True,),
+            weight_32=torch.mean(torch.stack(weight_32,dim=0),dim=0, keepdim=True,),
+            weight_64=torch.mean(torch.stack(weight_64,dim=0),dim=0, keepdim=True,),
+        )
+ 
+        return weights_dict
 
 if __name__ == "__main__":
     # __debug__ = True # when you execute without any option 
+    training = False # True # 
     B = 1
     C,W,H = (1,256,256)
     cuda_0 = torch.device("cuda:0")
-
     img = torch.randn(B,C,W,H,).to(device=cuda_0)
+
+    img_path = "/mnt/d/WDDD2/TIF_GRAY/wt_N2_081113_01/wt_N2_081113_01_T60_Z49.tiff"
+    img = Image.open(img_path)
+    transforms = v2.Compose([
+                    v2.Grayscale(), # Wide resNet has 3 channels
+                    v2.PILToTensor(),
+                    v2.Resize(
+                        size=(W, H), 
+                        interpolation=v2.InterpolationMode.BILINEAR
+                    ),
+                    v2.ToDtype(torch.float32, scale=True),
+                    # TODO: YouTransform
+                    v2.Normalize(mean=[0.485], std=[0.229]),
+                ]) 
+    img = transforms(img)
+    img = img.to(device=cuda_0)
+    img = img.unsqueeze(0)
+
     print(f"{img.shape=}")
 
-    model = MyTorchModel().to(device=cuda_0)
+    model = MyTorchModel(
+            training = training,
+            train_models=["vae", "diffusion"],
+    ).to(device=cuda_0)
     # model = torch.compile(model)
 
     # output = model.generate()
     output = model(img)
-    print(f"{output[0].shape=}")
-    print(f"{output[1].shape=}")
+
+    if training:
+        print(f"{output[0].shape=}")
+        print(f"{output[1].shape=}")
+    else:
+        print(f"{output.keys()=}")
 

@@ -25,7 +25,7 @@ class MyModel(AnomalyModule):
 
         training = True,
         learning_rate = 1e-8,
-        train_models=["VAE", "DDPM",],
+        train_models=["vae", "diffusion"],
 
         # Reproducibility
         seed =44,
@@ -42,7 +42,7 @@ class MyModel(AnomalyModule):
         self.seed = seed # 44,
         self.training = training # True,
         self.learning_rate = learning_rate 
-        self.train_models= train_models # ["VAE", "DDPM",],
+        self.train_models= train_models 
 
         # Development
         self.out_path = out_path
@@ -51,7 +51,13 @@ class MyModel(AnomalyModule):
         self.pre_trained = pre_trained
         self.model: MyTorchModel
 
-        self.loss = MyLoss()# torch.nn.MSELoss()
+        self.loss = MyLoss(
+            train_models= self.train_models, 
+            loss_image_weight = 1.0,
+            loss_latent_weight = 1.0,
+            loss_noise_weight = 1.0,
+            loss_kl_weight = 1.0,
+        )
 
     def _setup(self) -> None:
 
@@ -78,15 +84,13 @@ class MyModel(AnomalyModule):
                                 "DownEncoderBlock2D",
                                 "DownEncoderBlock2D",
                                 "DownEncoderBlock2D",
-                                "DownEncoderBlock2D",
                             ),
             vae_up_block_types = (
                                 "UpDecoderBlock2D",
                                 "UpDecoderBlock2D",
                                 "UpDecoderBlock2D",
-                                "UpDecoderBlock2D",
                             ),
-            vae_block_out_channels = (64, 128, 256, 256),
+            vae_block_out_channels = (64, 128, 256),
             vae_latent_channels = 64,
             vae_norm_num_groups = 64,
             scaling_factor = 1, # 0.18215,
@@ -107,8 +111,7 @@ class MyModel(AnomalyModule):
                                 "CrossAttnUpBlock2D",
                              ),
             unet_attention_head_dim = (5, 10, 20, 20),
-            # unet_block_out_channels = (320, 640, 1280, 1280),# 
-            unet_block_out_channels = (64, 128, 256, 512), # 
+            unet_block_out_channels = (32, 64, 128, 256), # 
             unet_cross_attention_dim= 1024,
             resnet_time_scale_shift = "default",
             time_embedding_type = "positional",
@@ -117,7 +120,7 @@ class MyModel(AnomalyModule):
             attention_type = "default",
 
             # DDPM Scheduler
-            ddpm_num_steps=10,# 1000,
+            ddpm_num_steps=5,# 10,# 1000,
             beta_start = 0.0001, 
             beta_end = 0.02,
             trained_betas = None,
@@ -223,6 +226,7 @@ class MyModel(AnomalyModule):
 
         batch["anomaly_maps"] = output["anomaly_map"]
         batch["pred_scores"] = output["pred_score"]
+
         return batch
 
 #     def predict_step(self, batch: dict[str, str | torch.Tensor], *args, **kwargs) -> STEP_OUTPUT:
