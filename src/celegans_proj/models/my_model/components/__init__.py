@@ -10,7 +10,6 @@ from .basic_modules import (
     min_max_scaling,
  
 )
-from .segmenter_param import DiffSegParamModel
 
 __ALL__ = [
     "DiffSeg",
@@ -20,7 +19,6 @@ __ALL__ = [
     "get_net_attn_map", 
     "gaussian_blur_2d",
     "min_max_scaling",
-    "DiffSegParamModel",
 ]
 
 
