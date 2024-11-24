@@ -23,20 +23,24 @@ def distance_matrix(x, y=None, p = 2): #pairwise distance of vectors
     
     dist = th.linalg.vector_norm(x - y, p, 2) if th.__version__ >= '1.7.0' else th.pow(x - y, p).sum(2)**(1/p)
     
+    dist.to(device=x.device)
     return dist
 
-class NN():
+class NN(th.nn.Module):
 
     def __init__(self, X = None, Y = None, p = 2):
+        super().__init__()
         self.p = p
+        if type(X) != type(None):
+            self.train(X, Y)
+
+    def forward(self,X, Y):
         self.train(X, Y)
+        return self.predict(X)
 
     def train(self, X, Y):
         self.train_pts = X
         self.train_label = Y
-
-    def __call__(self, x):
-        return self.predict(x)
 
     def predict(self, x):
         if type(self.train_pts) == type(None) or type(self.train_label) == type(None):
@@ -44,7 +48,7 @@ class NN():
             raise RuntimeError(f"{name} wasn't trained. Need to execute {name}.train() first")
         
         dist = distance_matrix(x, self.train_pts, self.p)
-        labels = th.argmin(dist, dim=1)
+        labels = th.argmin(dist, dim=1,)
         return self.train_label[labels]
 
 class KNN(NN):
@@ -83,6 +87,7 @@ class KNN(NN):
 class KMeans(NN):
 
     def __init__(self, X = None, k=2, n_iters = 10, p = 2):
+        super().__init__()
 
         self.k = k
         self.n_iters = n_iters
@@ -91,10 +96,14 @@ class KMeans(NN):
         if type(X) != type(None):
             self.train(X)
 
+    def forward(self,X,):
+        self.train(self, X,)
+        return self.predict(X)
+
     def train(self, X):
 
         self.train_pts = random_sample(X, self.k)
-        self.train_label = th.LongTensor(range(self.k))
+        self.train_label = th.tensor(range(self.k), device=X.device, dtype=th.int64)
 
         for _ in range(self.n_iters):
             self.labels = self.predict(X)

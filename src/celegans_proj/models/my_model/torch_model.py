@@ -46,17 +46,24 @@ from transformers import (
     # CLIPConfig,
     # CLIPModel,
 )
-from components import (
-# from .components import (
-    CrossAttnStoreProcessor,
 
+from components import (
+    CrossAttnStoreProcessor,
     gaussian_blur_2d,
     # min_max_scaling,
     DiffSeg, 
-    DiffSegParamModel,
 )
 from anomaly_map import AnomalyMapGenerator
+from segmentor_param_net import MyDiffSegParamNet
+
+# from .components import (
+    # CrossAttnStoreProcessor,
+    # gaussian_blur_2d,
+    # # min_max_scaling,
+    # DiffSeg, 
+# )
 # from .anomaly_map import AnomalyMapGenerator
+# from .segmentor_param_net import MyDiffSegParamNet
 
 torch.autograd.set_detect_anomaly(True)
 
@@ -164,7 +171,10 @@ class MyTorchModel(nn.Module):
         self.out_path = out_path
 
         self.anomaly_map_generator = AnomalyMapGenerator()
-        # self.diffSegParamModel = DiffSegParamModel()
+        self.DiffSegParamModel = MyDiffSegParamNet(
+            in_channel = 64, # this depends on VAE latent channel
+            KL_len = 4,
+        )
 
         vae = AutoencoderKL(
                 in_channels=vae_in_channels,
@@ -305,10 +315,11 @@ class MyTorchModel(nn.Module):
             requires_safety_checker = False,
         )
         self.pipe.set_progress_bar_config(disable=True)
-        self.pipe.to(device=self.device) # "cuda"
 
         self.generator = torch.Generator(device=self.pipe.device).manual_seed(seed)
 
+        self.pipe.to(device=self.device) # "cuda"
+        self.DiffSegParamModel.to(device=self.device) # "cuda"
 
     def check_settings(self, ref_cfg, cfg, title1, title2):
         self.store_settings(ref_cfg, title1)
@@ -396,14 +407,22 @@ class MyTorchModel(nn.Module):
             )
 
             # parts segmentation
-            # TODO:: adaptive parameter for segmentation 
-            KL_THRESHOLD = [0.003]*4 # self.diffSegParamModel(latents)  # KL_len is besaed on attn_weights len
-            self.segmenter = DiffSeg(KL_THRESHOLD, self.REFINEMENT, self.NUM_POINTS)
-            pred_masks = self.segment_with_attn_maps(net_attn_maps,)
+            KL_THRESHOLDS = self.DiffSegParamModel(latents)  
+            pred_masks = self.segment_with_attn_maps(net_attn_maps,KL_THRESHOLDS)
 
         pred_imgs = self.pipe.vae.decode(pred_latents/self.pipe.vae.config.scaling_factor, return_dict=False)[0]
 
         # TODO:: register_outputs in the way of dict , not tuple
+        output = dict(
+            imgs=imgs,
+            pred_imgs=pred_imgs,
+            latents=latents,
+            pred_latents=pred_latents,
+            posterior=posterior,
+            noises=noises,
+            pred_noises=pred_noises,
+            KL_THRESHOLDS=KL_THRESHOLDS,
+        )
 
 
         if self.training:
@@ -646,7 +665,7 @@ class MyTorchModel(nn.Module):
             if not name.split('.')[-1].startswith("attn1"):
                 continue
             if hasattr(module.processor, "attn_map"):
-                attn_maps[name] = module.processor.attn_map.detach().clone()#.cpu().numpy()
+                attn_maps[name] = module.processor.attn_map.clone()#.detach().cpu().numpy()
                 del module.processor.attn_map
                 # print(f"In get_attn_map:{attn_maps[name].shape=}\t")
                 # gc.collect()
@@ -762,20 +781,25 @@ class MyTorchModel(nn.Module):
 
 
  
-    def segment_with_attn_maps(self,net_attn_maps,):
+    def segment_with_attn_maps(self,net_attn_maps,KL_THRESHOLDS):
+
         pred_masks = []
-        for attn_maps in net_attn_maps:
-            weights_dict = self.split_attn_maps(attn_maps,)
-            # weight_size depends on VAE layer num
-            # self.store_attn_map(weights_dict)
-            
-            pred = self.segmenter.segment( 
-                                     weights_dict["weight_64"].detach().numpy(),
-                                     weights_dict["weight_32"].detach().numpy(),
-                                     weights_dict["weight_16"].detach().numpy(),
-                                     weights_dict["weight_8"].detach().numpy(),
-                                     # weights_dict["weight_4"].detach().numpy(),
-                            ) # b x 512 x 512
+        for attn_maps, KL_THRESHOLD in zip(net_attn_maps, KL_THRESHOLDS):
+            # KL_THRESHOLD = torch.tensor([0.003]*4) 
+            segmentor = DiffSeg(KL_THRESHOLD.flatten(), self.NUM_POINTS, self.REFINEMENT, )
+            segmentor.to(device=self.device) # "cuda"
+            weights_dict = self.split_attn_maps(attn_maps,detach=False,)
+            # self.store_attn_map(weights_dict)# weight_size depends on VAE layer num
+            weights_list = [
+                weights_dict["weight_64"],
+                weights_dict["weight_32"],
+                weights_dict["weight_16"],
+                weights_dict["weight_8"],
+                # weights_dict["weight_4"],
+            ]
+            weight_ratio = torch.tensor(segmentor.get_weight_rato(weights_list)).to(device=self.device)
+            pred = segmentor.segment(*weights_list, weight_ratio=weight_ratio,) # b x 512 x 512
+
             pred_masks.append(torch.Tensor(pred))
         pred_masks = torch.stack(pred_masks, dim=0)
         return pred_masks

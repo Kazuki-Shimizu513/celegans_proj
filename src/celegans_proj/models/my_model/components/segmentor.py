@@ -3,17 +3,27 @@ import numpy as np
 import torch as th
 from torch import nn 
 
-from clustering import KMeans as th_KMeans
-# from .clustering import KMeans as th_KMeans
+# from clustering import KMeans as th_KMeans
+from .clustering import KMeans as th_KMeans
 
 class DiffSeg(nn.Module):
-    def __init__(self, kl_threshold, refine, num_points):
+    def __init__(self, 
+        kl_threshold, 
+        num_points, 
+        refine=True,
+        n_iters= 100, 
+        p= 2,
+        device = "cuda",
+):
         super().__init__()
         # Generate the  gird
         self.grid = self.generate_sampling_grid(num_points)
         # Inialize other parameters 
-        self.kl_threshold = th.tensor(kl_threshold)
+        self.kl_threshold = kl_threshold
         self.refine = refine
+        self.n_iters= n_iters
+        self.p=p 
+        self.device = device
 
     def forward(self, weight_64, weight_32, weight_16, weight_8, weight_ratio = None ):
         preds = self.segment(
@@ -46,7 +56,8 @@ class DiffSeg(nn.Module):
         M_list = th.stack(M_list, dim=0)
         return M_list
  
-    def get_weight_rato(self, weight_list):
+    @staticmethod
+    def get_weight_rato(weight_list):
         # This function assigns proportional aggergation weight 
         sizes = []
         for weights in weight_list:
@@ -57,7 +68,7 @@ class DiffSeg(nn.Module):
     def aggregate_weights(self, weight_list, weight_ratio=None):
         if weight_ratio is None:
           weight_ratio = self.get_weight_rato(weight_list)
-        aggre_weights = th.zeros(64,64,64,64)
+        aggre_weights = th.zeros(64,64,64,64, device=self.device)
 
         for index,weights in enumerate(weight_list):
           size = int(np.sqrt(weights.shape[-1]))
@@ -65,8 +76,7 @@ class DiffSeg(nn.Module):
           # Average over the multi-head channel
           weights = weights.mean(0).reshape(-1,size,size)
           # Upsample the last two dimensions to 64 x 64
-          weights = nn.Upsample(scale_factor=(ratio,ratio), mode='bilinear', align_corners=True
-            )(weights.unsqueeze(0))
+          weights = nn.Upsample(scale_factor=(ratio,ratio), mode='bilinear', align_corners=True)(weights.unsqueeze(0))
           weights = th.reshape(weights,(size,size,64,64))
 
           # Normalize to make sure each map sums to one
@@ -74,6 +84,7 @@ class DiffSeg(nn.Module):
           
           # Spatial tiling along the first two dimensions
           weights = weights.repeat(ratio,ratio,1,1)
+
 
           # Aggrgate accroding to weight_ratio
           aggre_weights += weights*weight_ratio[index]
@@ -117,7 +128,7 @@ class DiffSeg(nn.Module):
             anchor = point
             kl_bin = self.KL(anchor,attns) < kl_threshold[iter]# 64 x 64
             if kl_bin.sum() > 0:
-              matched_idx = th.arange(len(attns))[kl_bin.reshape(-1)]
+              matched_idx = th.arange(len(attns), device=self.device)[kl_bin.reshape(-1)]
               for idx in matched_idx: matched.add(idx)
               aggregated_attn = attns[kl_bin].mean(0)
               new_attns.append(aggregated_attn.reshape(1,64,64))
@@ -138,7 +149,12 @@ class DiffSeg(nn.Module):
         # Kmeans refinement (optional for better visual consistency)
         if self.refine:
           attns = attns.reshape(-1,64*64)
-          kmeans = th_KMeans(k=attns_merged.shape[0], n_iters = 100, p = 2,)
+          kmeans = th_KMeans(
+              k=attns_merged.shape[0], 
+              n_iters = self.n_iters,# 100, 
+              p = self.p,# 2,
+          )
+          kmeans.to(device=self.device)
           kmeans.train(attns)
           clusters = kmeans.labels
           num_clusters = kmeans.k
