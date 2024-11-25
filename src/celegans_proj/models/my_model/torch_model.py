@@ -47,23 +47,23 @@ from transformers import (
     # CLIPModel,
 )
 
-from components import (
+# from components import (
+#     CrossAttnStoreProcessor,
+#     gaussian_blur_2d,
+#     # min_max_scaling,
+#     DiffSeg, 
+# )
+# from anomaly_map import AnomalyMapGenerator
+# from segmentor_param_net import MyDiffSegParamNet
+
+from .components import (
     CrossAttnStoreProcessor,
     gaussian_blur_2d,
     # min_max_scaling,
     DiffSeg, 
 )
-from anomaly_map import AnomalyMapGenerator
-from segmentor_param_net import MyDiffSegParamNet
-
-# from .components import (
-    # CrossAttnStoreProcessor,
-    # gaussian_blur_2d,
-    # # min_max_scaling,
-    # DiffSeg, 
-# )
-# from .anomaly_map import AnomalyMapGenerator
-# from .segmentor_param_net import MyDiffSegParamNet
+from .anomaly_map import AnomalyMapGenerator
+from .segmentor_param_net import MyDiffSegParamNet
 
 torch.autograd.set_detect_anomaly(True)
 
@@ -314,6 +314,7 @@ class MyTorchModel(nn.Module):
             image_encoder,
             requires_safety_checker = False,
         )
+
         self.pipe.set_progress_bar_config(disable=True)
 
         self.generator = torch.Generator(device=self.pipe.device).manual_seed(seed)
@@ -372,21 +373,21 @@ class MyTorchModel(nn.Module):
         latents = posterior.sample(generator=self.generator)
 
         # Reconstruction
-        # pred_latents= self.pipe( # for Debug
-        #     prompt = prompt,
-        #     num_inference_steps = 50, # self.ddpm_num_steps,
-        #     guidance_scale = self.guidance_scale, #  7.5,
-        #     sag_scale = self.sag_scale,#  0.75,
-        #     num_images_per_prompt = latents.shape[0], # B
-        #     generator = self.generator,
-        #     latents = latents,
-        #     output_type = "latent",
-        #     # output_type = "pt",
-        #     return_dict = False,
-        # )[0]
 
         if "diffusion" not in self.train_models:
             pred_latents = latents.clone()
+            # pred_latents= self.pipe( 
+            #     prompt = prompt,
+            #     num_inference_steps = 50, # self.ddpm_num_steps,
+            #     guidance_scale = self.guidance_scale, #  7.5,
+            #     sag_scale = self.sag_scale,#  0.75,
+            #     num_images_per_prompt = latents.shape[0], # B
+            #     generator = self.generator,
+            #     latents = latents,
+            #     output_type = "latent",
+            #     # output_type = "pt",
+            #     return_dict = False,
+            # )[0]
         else:
             # guidance_scale = 0.0
             # sag_scale = 0.0
@@ -398,7 +399,12 @@ class MyTorchModel(nn.Module):
                 guidance_scale = self.guidance_scale
                 sag_scale = self.sag_scale
 
-            pred_noises, noises, pred_latents, noisy_latents, net_attn_maps= self.diffusion_step(
+            (
+                pred_noises, noises, 
+                pred_latents, noisy_latents, 
+                pred_masks, KL_THRESHOLDS,
+                gen_latents, gen_masks,  gen_KL_THRESHOLDS,
+            ) = self.diffusion_step(
                 latents, 
                 prompt, 
                 guidance_scale = guidance_scale, #  7.5,
@@ -406,34 +412,59 @@ class MyTorchModel(nn.Module):
                 num_images_per_prompt = 1,  # SAG for each latent
             )
 
-            # parts segmentation
-            KL_THRESHOLDS = self.DiffSegParamModel(latents)  
-            pred_masks = self.segment_with_attn_maps(net_attn_maps,KL_THRESHOLDS)
-
         pred_imgs = self.pipe.vae.decode(pred_latents/self.pipe.vae.config.scaling_factor, return_dict=False)[0]
+        gen_imgs = self.pipe.vae.decode(gen_latents/self.pipe.vae.config.scaling_factor, return_dict=False)[0]
+
 
         # TODO:: register_outputs in the way of dict , not tuple
         output = dict(
             imgs=imgs,
             pred_imgs=pred_imgs,
+
+            posterior=posterior,
+
             latents=latents,
             pred_latents=pred_latents,
-            posterior=posterior,
-            noises=noises,
-            pred_noises=pred_noises,
-            KL_THRESHOLDS=KL_THRESHOLDS,
         )
-
-
+        anomaly_maps, pred_scores = self.anomaly_map_generator(output,)
+        output.update(
+            anomaly_maps = anomaly_maps,
+            pred_scores = pred_scores
+        )
         if self.training:
             if "vae" in self.train_models and "diffusion" in self.train_models:
-                output = imgs, pred_imgs, latents, pred_latents, posterior, noises, pred_noises
+                output.update(
+                    noises=noises, 
+                    pred_noises=pred_noises, 
+
+                    gen_imgs=gen_imgs,
+                    gen_latents=gen_latents,
+
+                    KL_THRESHOLDS=KL_THRESHOLDS,
+                    gen_KL_THRESHOLDS=gen_KL_THRESHOLDS,
+
+                    pred_masks=pred_masks,
+                    gen_masks=gen_masks,
+                  )
             elif "vae" in self.train_models:
-                output = imgs, pred_imgs, latents, pred_latents, posterior
-            else:
-                output = imgs, pred_imgs, latents, pred_latents, posterior, noises, pred_noises
-        else:
-            output = self.anomaly_map_generator(imgs, pred_imgs)
+                pass
+            else:# only "diffusion"
+                output.update(
+                    noises=noises, 
+                    pred_noises=pred_noises, 
+
+                    gen_imgs=gen_imgs,
+                    gen_latents=gen_latents,
+
+                    KL_THRESHOLDS=KL_THRESHOLDS,
+                    gen_KL_THRESHOLDS=gen_KL_THRESHOLDS,
+
+                    pred_masks=pred_masks,
+                    gen_masks=gen_masks,
+                  )
+ 
+        else: # inference phase
+            output =  {"anomaly_map": output["anomaly_maps"], "pred_score": output["pred_scores"]}
 
         return output
 
@@ -530,9 +561,14 @@ class MyTorchModel(nn.Module):
         original_attn_proc = self.pipe.unet.attn_processors
         self.set_attn_processor(attn_proc_name="CrossAttnStoreProcessor")
 
+        if self.training:
+            self.pipe.set_progress_bar_config(disable=True)
+        else:
+            self.pipe.set_progress_bar_config(disable=False)
+
+
         # 4. Execute Denoising Loop
         net_attn_maps = []
-
         num_total = noisy_latents.shape[0] # timesteps.sum().item()
         with self.pipe.progress_bar(total=num_total) as progress_bar:
             for idx, (latent, timestep) in enumerate(zip(noisy_latents, timesteps)):
@@ -540,96 +576,33 @@ class MyTorchModel(nn.Module):
                 timestep = int(timestep.item())
                 _attn_maps = {}
                 attn_maps = {}
+                # 4. Execute Denoising Loop
                 if self.training:
-                    # 4.1 expand the latents if we are doing classifier free guidance
-                    latent_model_input = torch.cat([latent] * 2) if do_classifier_free_guidance else latent
-                    latent_model_input = self.pipe.scheduler.scale_model_input(latent_model_input, timestep)
-
-                    # 4.2 predict the noise residual
-                    noise_pred = self.pipe.unet(
-                        latent_model_input,
+                    noise_pred, attn_maps,  = self._diffusion_step(
+                        latent,
+                        do_classifier_free_guidance,
                         timestep,
-                        encoder_hidden_states=prompt_embeds,
-                    ).sample
-                    mid_attn_map, attn_maps, map_size = self.get_attn_map(attn_maps)
-
+                        prompt_embeds,
+                        attn_maps,
+                    )
                     # Update attn_maps
                     _attn_maps = self.update_attn_maps(_attn_maps, attn_maps, timestep)
-                    
+                    pred_noises[idx] = pred_noises[idx] + noise_pred.squeeze(0) / timestep
                     # compute the original sample x_t -> x_0
                     latent = self.pipe.scheduler.step(noise_pred, timestep, latent, **extra_step_kwargs).pred_original_sample
-                    pred_noises[idx] = pred_noises[idx] + noise_pred.squeeze(0) / timestep
-                    pred_latents[idx] = latent.squeeze(0).clone()
-                    net_attn_maps.append(_attn_maps)
-
-                    # Update progress bar
-                    progress_bar.update()
-                    continue
-
-
-                # 4. Execute Denoising Loop
-                for i, t in enumerate(list(reversed(range(timestep)))):
-                    # 4.1 expand the latents if we are doing classifier free guidance
-                    latent_model_input = torch.cat([latent] * 2) if do_classifier_free_guidance else latent
-                    latent_model_input = self.pipe.scheduler.scale_model_input(latent_model_input, t)
-
-                    # 4.2 predict the noise residual
-                    noise_pred = self.pipe.unet(
-                        latent_model_input,
-                        t,
-                        encoder_hidden_states=prompt_embeds,
-                    ).sample
-                    mid_attn_map, attn_maps, map_size = self.get_attn_map(attn_maps)
-
-                    # 4.3 perform guidance
-                    if do_classifier_free_guidance:
-                        noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
-                        noise_pred = noise_pred_uncond \
-                            + guidance_scale * (noise_pred_text - noise_pred_uncond)
-
-                    # 4.4 perform self-attention guidance with the stored self-attention map
-                    if do_self_attention_guidance:
-                        if do_classifier_free_guidance:
-                            # DDPM-like prediction of x0
-                            pred_x0 = self.pipe.pred_x0(latent, noise_pred_uncond, t)
-
-                            # get the stored attention maps
-                            uncond_attn, cond_attn = mid_attn_map.chunk(2)
-
-                            # self-attention-based degrading of latents
-                            degraded_latent, attn_mask, attn_map = self.sag_masking(
-                                pred_x0, uncond_attn, map_size,
-                                torch.Tensor([t]).to(torch.int32), 
-                                self.pipe.pred_epsilon(latent, noise_pred_uncond, t)
-                            )
-                            uncond_emb, _ = prompt_embeds.chunk(2)
-                            # forward and give guidance
-                            degraded_pred = self.pipe.unet(degraded_latent,t,encoder_hidden_states=uncond_emb,).sample
-                            noise_pred = noise_pred + sag_scale * (noise_pred_uncond - degraded_pred)
-                        else:
-                            # DDIM-like prediction of x0
-                            pred_x0 = self.pipe.pred_x0(latent, noise_pred, t) # pred_latents0
-
-                            # get the stored attention maps
-                            cond_attn = mid_attn_map
-
-                            # self-attention-based degrading of latents
-                            degraded_latent, attn_mask, attn_map= self.sag_masking(
-                                pred_x0, cond_attn, map_size, 
-                                torch.Tensor([t]).to(torch.int32), 
-                                self.pipe.pred_epsilon(latent, noise_pred, t)
-                            )
-
-                            # forward and give guidance
-                            degraded_pred = self.pipe.unet(degraded_latent,t,encoder_hidden_states=prompt_embeds,).sample
-                            noise_pred = noise_pred + sag_scale * (noise_pred - degraded_pred)
-
-                    # Update attn_maps
-                    _attn_maps = self.update_attn_maps(_attn_maps, attn_maps, timestep)# , process)
-                    
-                    # compute the previous noisy sample x_t -> x_t-1
-                    latent = self.pipe.scheduler.step(noise_pred, t, latent, **extra_step_kwargs).prev_sample
-                    pred_noises[idx] = pred_noises[idx] + noise_pred.squeeze(0) / timestep
+                else:
+                    for i, t in enumerate(list(reversed(range(timestep)))):
+                        noise_pred, attn_maps, = self._sag_step(
+                            i, t, latent, prompt_embeds,
+                            do_classifier_free_guidance, do_self_attention_guidance, 
+                            guidance_scale, sag_scale,
+                            attn_maps,
+                        )
+                        # Update attn_maps
+                        _attn_maps = self.update_attn_maps(_attn_maps, attn_maps, timestep)# , process)
+                        pred_noises[idx] = pred_noises[idx] + noise_pred.squeeze(0) / timestep
+                        # compute the previous noisy sample x_t -> x_t-1
+                        latent = self.pipe.scheduler.step(noise_pred, t, latent, **extra_step_kwargs).prev_sample
 
                 pred_latents[idx] = latent.squeeze(0).clone()
                 net_attn_maps.append(_attn_maps)
@@ -639,12 +612,61 @@ class MyTorchModel(nn.Module):
 
 
 
+        # parts segmentation
+        KL_THRESHOLDS = self.DiffSegParamModel(latents)  
+        pred_masks = self.segment_with_attn_maps(net_attn_maps,KL_THRESHOLDS)
+        del net_attn_maps
+        gc.collect()
+
+
+
+
+
+        # generate latents and gen_attn_maps
+        self.set_attn_processor(attn_proc_name="CrossAttnStoreProcessor")
+        # timesteps = self.scheduler.timesteps
+        timesteps = torch.tensor([self.ddpm_num_steps -1 ] * noises.shape[0])
+        gen_latents = noisy_latents.clone()
+        gen_attn_maps = []
+        num_total = noises.shape[0] # timesteps.sum().item()
+        with self.pipe.progress_bar(total=num_total) as progress_bar:
+            for idx, (noise, timestep) in enumerate(zip(noises, timesteps)):
+                noise = noise.unsqueeze(0)
+                timestep = int(timestep.item())
+                _attn_maps = {}
+                attn_maps = {}
+                noise_pred, attn_maps, = self._diffusion_step(
+                    noise,
+                    do_classifier_free_guidance,
+                    timestep,
+                    prompt_embeds,
+                    attn_maps,
+                )
+                _attn_maps = self.update_attn_maps(_attn_maps, attn_maps, timestep)
+                gen_latent = self.pipe.scheduler.step(noise_pred, timestep, noise, **extra_step_kwargs).pred_original_sample
+
+                gen_latents[idx] = gen_latent.squeeze(0).clone()
+                gen_attn_maps.append(_attn_maps)
+                # Update progress bar
+                progress_bar.update()
+
+
+        # parts segmentation
+        gen_KL_THRESHOLDS = self.DiffSegParamModel(gen_latents)  
+        gen_masks = self.segment_with_attn_maps(gen_attn_maps,gen_KL_THRESHOLDS)
+
+
+
         self.pipe.maybe_free_model_hooks()
         # make sure to set the original attention processors back
         self.pipe.unet.set_attn_processor(original_attn_proc)
 
-
-        return pred_noises, noises, pred_latents, noisy_latents, net_attn_maps
+        return (
+            pred_noises, noises, 
+            pred_latents, noisy_latents, 
+            pred_masks, KL_THRESHOLDS,
+            gen_latents, gen_masks,  gen_KL_THRESHOLDS,
+        )
 
     def set_attn_processor(self,attn_proc_name):
         for name, module in self.pipe.unet.named_modules():
@@ -709,7 +731,96 @@ class MyTorchModel(nn.Module):
                 # module.processor.map_size = output[0].shape[-2:]
         return forward_hook
 
+    def _diffusion_step(
+        self,
+        latent,
+        do_classifier_free_guidance,
+        timestep,
+        prompt_embeds,
+        attn_maps,
+    ):
 
+        # 4.1 expand the latents if we are doing classifier free guidance
+        latent_model_input = torch.cat([latent] * 2) if do_classifier_free_guidance else latent
+        latent_model_input = self.pipe.scheduler.scale_model_input(latent_model_input, timestep)
+
+        # 4.2 predict the noise residual
+        noise_pred = self.pipe.unet(
+            latent_model_input,
+            timestep,
+            encoder_hidden_states=prompt_embeds,
+        ).sample
+        mid_attn_map, attn_maps, map_size = self.get_attn_map(attn_maps)
+
+        return noise_pred, attn_maps,
+
+
+
+    def _sag_step(
+        self, 
+        i, t, latent, prompt_embeds,
+        do_classifier_free_guidance, do_self_attention_guidance, 
+        guidance_scale, sag_scale,
+        attn_maps,
+    ):
+
+        # 4.1 expand the latents if we are doing classifier free guidance
+        latent_model_input = torch.cat([latent] * 2) if do_classifier_free_guidance else latent
+        latent_model_input = self.pipe.scheduler.scale_model_input(latent_model_input, t)
+
+        # 4.2 predict the noise residual
+        noise_pred = self.pipe.unet(
+            latent_model_input,
+            t,
+            encoder_hidden_states=prompt_embeds,
+        ).sample
+        mid_attn_map, attn_maps, map_size = self.get_attn_map(attn_maps)
+
+
+        # 4.3 perform guidance
+        if do_classifier_free_guidance:
+            noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
+            noise_pred = noise_pred_uncond \
+                + guidance_scale * (noise_pred_text - noise_pred_uncond)
+
+        # 4.4 perform self-attention guidance with the stored self-attention map
+        if do_self_attention_guidance:
+            if do_classifier_free_guidance:
+                # DDPM-like prediction of x0
+                pred_x0 = self.pipe.pred_x0(latent, noise_pred_uncond, t)
+
+                # get the stored attention maps
+                uncond_attn, cond_attn = mid_attn_map.chunk(2)
+
+                # self-attention-based degrading of latents
+                degraded_latent, attn_mask, attn_map = self.sag_masking(
+                    pred_x0, uncond_attn, map_size,
+                    torch.Tensor([t]).to(torch.int32), 
+                    self.pipe.pred_epsilon(latent, noise_pred_uncond, t)
+                )
+                uncond_emb, _ = prompt_embeds.chunk(2)
+                # forward and give guidance
+                degraded_pred = self.pipe.unet(degraded_latent,t,encoder_hidden_states=uncond_emb,).sample
+                noise_pred = noise_pred + sag_scale * (noise_pred_uncond - degraded_pred)
+            else:
+                # DDIM-like prediction of x0
+                pred_x0 = self.pipe.pred_x0(latent, noise_pred, t) # pred_latents0
+
+                # get the stored attention maps
+                cond_attn = mid_attn_map
+
+                # self-attention-based degrading of latents
+                degraded_latent, attn_mask, attn_map= self.sag_masking(
+                    pred_x0, cond_attn, map_size, 
+                    torch.Tensor([t]).to(torch.int32), 
+                    self.pipe.pred_epsilon(latent, noise_pred, t)
+                )
+
+                # forward and give guidance
+                degraded_pred = self.pipe.unet(degraded_latent,t,encoder_hidden_states=prompt_embeds,).sample
+                noise_pred = noise_pred + sag_scale * (noise_pred - degraded_pred)
+
+        return noise_pred, attn_maps,
 
     def sag_masking(self, original_latents, attn_map, map_size, t, eps):
         # Same masking process as in SAG paper: https://arxiv.org/pdf/2210.00939.pdf
@@ -876,9 +987,5 @@ if __name__ == "__main__":
     # output = model.generate()
     output = model(img)
 
-    if training:
-        print(f"{output[0].shape=}")
-        print(f"{output[1].shape=}")
-    else:
-        print(f"{output.keys()=}")
+    print(f"{output.keys()=}")
 

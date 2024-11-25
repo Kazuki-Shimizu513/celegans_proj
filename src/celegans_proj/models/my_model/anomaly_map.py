@@ -16,13 +16,12 @@ class AnomalyMapGenerator(nn.Module):
 
     def forward(
         self, 
-        imgs, pred_imgs, pred_masks=None,
+        outputs,
     ) -> torch.Tensor:
         """Compute anomaly map given encoder and decoder features.
 
         Args:
-            student_features (list[torch.Tensor]): List of encoder features
-            teacher_features (list[torch.Tensor]): List of decoder features
+            outputs : dict of result of batch iter
 
         Returns:
             Tensor: Anomaly maps of length batch.
@@ -30,7 +29,7 @@ class AnomalyMapGenerator(nn.Module):
 
 
         anomaly_maps = self.compute_recon_distance(
-                        pred_imgs, imgs, 
+                        outputs["pred_imgs"], outputs["imgs"], 
                         mode = "L2", 
                         perceptual = False, 
                       )
@@ -39,14 +38,13 @@ class AnomalyMapGenerator(nn.Module):
         # TODO :: or Class Histgram Maharanobis Distance using pred_mask
 
         pred_scores = self.compute_metrics(
-                          pred_imgs, imgs, 
-                          anomaly_maps, 
-                          pred_masks, 
-                          mode="psnr",
+                        outputs["pred_imgs"], outputs["imgs"], 
+                        anomaly_maps, 
+                        # outputs["pred_masks"], outputs["gen_masks"],
+                        mode="psnr",
         )
 
-        output =  {"anomaly_map": anomaly_maps, "pred_score": pred_scores}
-        return output 
+        return anomaly_maps, pred_scores 
 
     @staticmethod
     def compute_recon_distance(
@@ -77,14 +75,11 @@ class AnomalyMapGenerator(nn.Module):
         self,
         pred_imgs, imgs,
         anomaly_maps=None,
-        pred_masks=None,
         mode = "psnr", 
     ):
 
         assert pred_imgs.shape == imgs.shape,\
             f"{pred_imgs.shape=}\t{imgs.shape=}"
-
-
 
         if mode == "psnr":
             # Calc_psnr metrics
