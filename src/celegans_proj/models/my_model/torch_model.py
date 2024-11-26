@@ -432,44 +432,45 @@ class MyTorchModel(nn.Module):
             latents=latents,
             pred_latents=pred_latents,
         )
+
+
+        if "vae" in self.train_models and "diffusion" in self.train_models:
+            output.update(
+                noises=noises, 
+                pred_noises=pred_noises, 
+
+                gen_imgs=gen_imgs,
+                gen_latents=gen_latents,
+
+                KL_THRESHOLDS=KL_THRESHOLDS,
+                gen_KL_THRESHOLDS=gen_KL_THRESHOLDS,
+
+                pred_masks=pred_masks,
+                gen_masks=gen_masks,
+              )
+        elif "vae" in self.train_models:
+            pass
+        else:# only "diffusion"
+            output.update(
+                noises=noises, 
+                pred_noises=pred_noises, 
+
+                gen_imgs=gen_imgs,
+                gen_latents=gen_latents,
+
+                KL_THRESHOLDS=KL_THRESHOLDS,
+                gen_KL_THRESHOLDS=gen_KL_THRESHOLDS,
+
+                pred_masks=pred_masks,
+                gen_masks=gen_masks,
+              )
+
         anomaly_maps, pred_scores = self.anomaly_map_generator(output,)
         output.update(
             anomaly_maps = anomaly_maps,
             pred_scores = pred_scores
         )
-        if self.training:
-            if "vae" in self.train_models and "diffusion" in self.train_models:
-                output.update(
-                    noises=noises, 
-                    pred_noises=pred_noises, 
-
-                    gen_imgs=gen_imgs,
-                    gen_latents=gen_latents,
-
-                    KL_THRESHOLDS=KL_THRESHOLDS,
-                    gen_KL_THRESHOLDS=gen_KL_THRESHOLDS,
-
-                    pred_masks=pred_masks,
-                    gen_masks=gen_masks,
-                  )
-            elif "vae" in self.train_models:
-                pass
-            else:# only "diffusion"
-                output.update(
-                    noises=noises, 
-                    pred_noises=pred_noises, 
-
-                    gen_imgs=gen_imgs,
-                    gen_latents=gen_latents,
-
-                    KL_THRESHOLDS=KL_THRESHOLDS,
-                    gen_KL_THRESHOLDS=gen_KL_THRESHOLDS,
-
-                    pred_masks=pred_masks,
-                    gen_masks=gen_masks,
-                  )
- 
-        else: # inference phase
+        if not self.training: # # inference phase
             output =  {"anomaly_map": output["anomaly_maps"], "pred_score": output["pred_scores"]}
 
         return output
@@ -540,7 +541,7 @@ class MyTorchModel(nn.Module):
                                           device=latents.device,).long()
             noisy_latents = self.pipe.scheduler.add_noise(latents, noises, timesteps)
         else:
-            timesteps = torch.Tensor([self.ddpm_num_steps] * len(latents))
+            timesteps = torch.tensor([self.ddpm_num_steps] * len(latents))
             noisy_latents = latents.clone()
         pred_noises = torch.zeros_like(noises)
 
@@ -567,10 +568,10 @@ class MyTorchModel(nn.Module):
         original_attn_proc = self.pipe.unet.attn_processors
         self.set_attn_processor(attn_proc_name="CrossAttnStoreProcessor")
 
-        if self.training:
-            self.pipe.set_progress_bar_config(disable=True)
-        else:
-            self.pipe.set_progress_bar_config(disable=False)
+        # if self.training:
+        #     self.pipe.set_progress_bar_config(disable=True)
+        # else:
+        #     self.pipe.set_progress_bar_config(disable=False)
 
 
         # 4. Execute Denoising Loop
@@ -583,32 +584,50 @@ class MyTorchModel(nn.Module):
                 _attn_maps = {}
                 attn_maps = {}
                 # 4. Execute Denoising Loop
-                if self.training:
-                    noise_pred, attn_maps,  = self._diffusion_step(
-                        latent,
-                        do_classifier_free_guidance,
-                        timestep,
-                        prompt_embeds,
-                        attn_maps,
-                    )
-                    # Update attn_maps
-                    _attn_maps = attn_maps
-                    pred_noises[idx] = noise_pred.squeeze(0).clone()
-                    # compute the original sample x_t -> x_0
-                    latent = self.pipe.scheduler.step(noise_pred, timestep, latent, **extra_step_kwargs).pred_original_sample
-                else:
-                    for i, t in enumerate(list(reversed(range(timestep)))):
-                        noise_pred, attn_maps, = self._sag_step(
-                            i, t, latent, prompt_embeds,
-                            do_classifier_free_guidance, do_self_attention_guidance, 
-                            guidance_scale, sag_scale,
-                            attn_maps,
-                        )
-                        # Update attn_maps
-                        _attn_maps = self.update_attn_maps(_attn_maps, attn_maps, timestep)# , process)
-                        pred_noises[idx] = pred_noises[idx] + noise_pred.squeeze(0) / timestep
-                        # compute the previous noisy sample x_t -> x_t-1
-                        latent = self.pipe.scheduler.step(noise_pred, t, latent, **extra_step_kwargs).prev_sample
+
+                noise_pred, attn_maps,  = self._diffusion_step(
+                    latent,
+                    do_classifier_free_guidance,
+                    timestep,
+                    prompt_embeds,
+                    attn_maps,
+                )
+                # Update attn_maps
+                _attn_maps = attn_maps
+                pred_noises[idx] = noise_pred.squeeze(0).clone()
+                # compute the original sample x_t -> x_0
+                latent = self.pipe.scheduler.step(noise_pred, timestep, latent, **extra_step_kwargs).pred_original_sample
+
+
+
+#                 if self.training:
+
+#                     noise_pred, attn_maps,  = self._diffusion_step(
+#                         latent,
+#                         do_classifier_free_guidance,
+#                         timestep,
+#                         prompt_embeds,
+#                         attn_maps,
+#                     )
+#                     # Update attn_maps
+#                     _attn_maps = attn_maps
+#                     pred_noises[idx] = noise_pred.squeeze(0).clone()
+#                     # compute the original sample x_t -> x_0
+#                     latent = self.pipe.scheduler.step(noise_pred, timestep, latent, **extra_step_kwargs).pred_original_sample
+
+#                 else:
+#                     for i, t in enumerate(list(reversed(range(timestep)))):
+#                         noise_pred, attn_maps, = self._sag_step(
+#                             i, t, latent, prompt_embeds,
+#                             do_classifier_free_guidance, do_self_attention_guidance, 
+#                             guidance_scale, sag_scale,
+#                             attn_maps,
+#                         )
+#                         # Update attn_maps
+#                         _attn_maps = self.update_attn_maps(_attn_maps, attn_maps, timestep)# , process)
+#                         pred_noises[idx] = pred_noises[idx] + noise_pred.squeeze(0) / timestep
+#                         # compute the previous noisy sample x_t -> x_t-1
+#                         latent = self.pipe.scheduler.step(noise_pred, t, latent, **extra_step_kwargs).prev_sample
 
                 pred_latents[idx] = latent.squeeze(0).clone()
                 net_attn_maps.append(_attn_maps)
@@ -624,7 +643,7 @@ class MyTorchModel(nn.Module):
         if self.training_mask:
             pred_masks = self.segment_with_attn_maps(net_attn_maps,KL_THRESHOLDS)
         else:
-            pred_masks = torch.randint(5,latents.shape, device=KL_THRESHOLDS.device)
+            pred_masks = torch.randint(5,(latents.shape[0],1,256,256), device=KL_THRESHOLDS.device)
         del net_attn_maps
         gc.collect()
 
@@ -667,7 +686,7 @@ class MyTorchModel(nn.Module):
         if self.training_mask:
             gen_masks = self.segment_with_attn_maps(gen_attn_maps,gen_KL_THRESHOLDS)
         else:
-            gen_masks = torch.randint(5,latents.shape, device=gen_KL_THRESHOLDS.device)
+            gen_masks = torch.randint(5,(latents.shape[0],1,256,256), device=KL_THRESHOLDS.device)
         del gen_attn_maps
         gc.collect()
 

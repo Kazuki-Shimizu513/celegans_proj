@@ -1,5 +1,4 @@
 
-
 import torch 
 from torch import nn
 import torch.nn.functional as F
@@ -142,7 +141,10 @@ class MyLoss(nn.Module):
         # unsup_loss = unsup_entro + unsup_hist
 
         loss = sup_loss # + unsup_loss
+
+        # print(f"In segmentation {loss=}\t{loss.shape=}")
         return loss
+
 
 
     @staticmethod
@@ -191,6 +193,8 @@ class MyLoss(nn.Module):
 
 
 
+
+
 class MulticlassCrossEntropyLoss(nn.Module):
     def __init__(self,ignore_index=None):
         super().__init__()
@@ -209,9 +213,10 @@ class MulticlassCrossEntropyLoss(nn.Module):
         # print(f"in multi class segmentation loss\n\t{logits.shape=}{logits.dtype=}\n\t{targets.shape=}{targets.dtype=}")
 
         if logits.shape[1] >= targets.shape[1]:
-            num_classes = logits.shape[1]
+            num_classes = logits.flatten().unique()# .shape[1]
         else:
-            num_classes = targets.shape[1]
+            num_classes = targets.flatten().unique()# .shape[1]
+
         logits_one_hot = torch.nn.functional.one_hot(logits.squeeze(1), num_classes=num_classes)
         # Convert from NHWC to NCHW
         logits_one_hot = logits_one_hot.permute(0, 3, 1, 2).type(torch.float)
@@ -242,9 +247,9 @@ class ClassBalancedDiceLoss(nn.Module):
         # probabilities = torch.softmax(prediction,dim=1)
 
         if prediction.shape[1] >= target.shape[1]:
-            num_classes = prediction.shape[1]
+            num_classes = prediction.flatten().unique()# .shape[1]
         else:
-            num_classes = target.shape[1]
+            num_classes = target.flatten().unique()# .shape[1]
         prediction_one_hot = torch.nn.functional.one_hot(prediction.squeeze(1), num_classes=num_classes)
         # Convert from NHWC to NCHW
         prediction_one_hot = prediction_one_hot.permute(0, 3, 1, 2).type(torch.float)
@@ -326,9 +331,9 @@ class FocalLoss(nn.Module):
         # num_class = logit.shape[1]
 
         if logit.shape[1] >= target.shape[1]:
-            num_class = logit.shape[1]
+            num_class = logit.flatten().unique()# .shape[1]
         else:
-            num_class = target.shape[1]
+            num_class = target.flatten().unique()# .shape[1]
         logit_one_hot = torch.nn.functional.one_hot(logit.squeeze(1), num_classes=num_class)
         # Convert from NHWC to NCHW
         logit = logit_one_hot.permute(0, 3, 1, 2).type(torch.float)
@@ -402,9 +407,9 @@ class HistLoss(nn.Module):
         # pred = torch.softmax(pred,dim=1)
 
         if pred.shape[1] >= trg.shape[1]:
-            num_classes = pred.shape[1]
+            num_classes = pred.flatten().unique()# .shape[1]
         else:
-            num_classes = trg.shape[1]
+            num_classes = trg.flatten().unique()# .shape[1]
         pred_one_hot = torch.nn.functional.one_hot(pred.squeeze(1), num_classes=num_classes)
         # Convert from NHWC to NCHW
         pred = pred_one_hot.permute(0, 3, 1, 2).type(torch.float)

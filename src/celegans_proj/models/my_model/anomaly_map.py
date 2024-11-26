@@ -8,7 +8,7 @@ from torch.nn import functional as F
 from torchmetrics.functional.image import (
     peak_signal_noise_ratio as PSNR,
 )
-
+from torchmetrics.functional.segmentation import mean_iou
 
 class AnomalyMapGenerator(nn.Module):
     """Generate Anomaly Heatmap.
@@ -31,7 +31,6 @@ class AnomalyMapGenerator(nn.Module):
         anomaly_maps = self.compute_recon_distance(
                         outputs["pred_imgs"], outputs["imgs"], 
                         mode = "L2", 
-                        perceptual = False, 
                       )
 
         # TODO :: Cosine Distance using wildtype feature and test feature cropped by pred_mask
@@ -39,9 +38,9 @@ class AnomalyMapGenerator(nn.Module):
 
         pred_scores = self.compute_metrics(
                         outputs["pred_imgs"], outputs["imgs"], 
+                        outputs['pred_masks'], outputs['gen_masks'], 
                         anomaly_maps, 
-                        # outputs["pred_masks"], outputs["gen_masks"],
-                        mode="psnr",
+                        mode=None,
         )
 
         return anomaly_maps, pred_scores 
@@ -50,7 +49,6 @@ class AnomalyMapGenerator(nn.Module):
     def compute_recon_distance(
         pred, target,
         mode = "L2", 
-        perceptual = False, 
     ):
 
         assert pred.shape == target.shape,\
@@ -74,26 +72,71 @@ class AnomalyMapGenerator(nn.Module):
     def compute_metrics(
         self,
         pred_imgs, imgs,
+        pred_masks, gen_masks, 
         anomaly_maps=None,
-        mode = "psnr", 
+        mode = None,# "psnr", 
     ):
+        """
+        Return:
+            pred_score : (normal)0-1(anomaly)
+        """
 
         assert pred_imgs.shape == imgs.shape,\
             f"{pred_imgs.shape=}\t{imgs.shape=}"
 
+        # Calc reconstruction metrics
         if mode == "psnr":
-            # Calc_psnr metrics
             scores = []
             for pred, img in zip(pred_imgs, imgs):
                 score = PSNR(pred, img, )
                 scores.append(score)
             scores = torch.stack(scores, dim=0)
+            scores = 1 - self.min_max_scaling(scores)
         else:
-            scores = torch.max(anomaly_maps, dim=0)
+            scores = torch.max(anomaly_maps, dim=0).values
 
-        # TODO:: add metric for segmentation mask 
+        # Calc segmentation metrics
+        _scores = []
+        for pred, gen in zip(pred_masks, gen_masks):
+            mIoU = self.calc_meanIoU(pred, gen,)
+            score = 1 - mIoU.mean()
+            _scores.append(score)
+        _scores = torch.stack(_scores, dim=0)
+ 
+        scores = (scores + _scores)/2
 
         return scores
+
+    def min_max_scaling(self,v, new_min=0.0, new_max=1.0):
+        v_min, v_max = v.min(), v.max()
+        v_p = (v - v_min)/(v_max - v_min)*(new_max - new_min) + new_min
+        return v_p
+
+    @staticmethod
+    def calc_meanIoU(pred, gen, ):
+        if pred.shape[1] >= gen.shape[1]:
+            num_classes = pred.flatten().unique().size(dim=0)# .item()
+        else:
+            num_classes = gen.flatten().unique().size(dim=0)# .item()
+
+        pred_one_hot = torch.nn.functional.one_hot(pred.squeeze(1), num_classes=num_classes)
+        # Convert from NHWC to NCHW
+        pred_one_hot = pred_one_hot.permute(0, 3, 1, 2)# .type(torch.float)
+
+        gen_one_hot = torch.nn.functional.one_hot(gen.squeeze(1), num_classes=num_classes)
+        # Convert from NHWC to NCHW
+        gen_one_hot = gen_one_hot.permute(0, 3, 1, 2)# .type(torch.float)
+
+        mIoU = mean_iou(
+            pred_one_hot, gen_one_hot,
+            num_classes=num_classes,
+            include_background=True, 
+            per_class=False, 
+            input_format='one-hot'
+        )
+
+        return mIoU
+
 
 
 
