@@ -73,7 +73,8 @@ class MyTorchModel(nn.Module):
             # Reproducibility
             seed =44,
             training = True,
-            train_models=["vae", "diffusion"],
+            training_mask = False,#True,
+            train_models=["vae", "diffsion"],
 
 
             # Model General
@@ -147,7 +148,7 @@ class MyTorchModel(nn.Module):
 
             # DiffSeg
             ## DiffSegParamModel
-            # KL_THRESHOLD=[0.0027]*4,
+            KL_THRESHOLD=[0.0027]*4,
             NUM_POINTS=2,
             REFINEMENT=True,
 
@@ -159,6 +160,7 @@ class MyTorchModel(nn.Module):
         super().__init__()
 
         self.training = training
+        self.training_mask = training_mask
         self.train_models = train_models
         self.ddpm_num_steps = ddpm_num_steps
         self.guidance_scale=guidance_scale
@@ -171,6 +173,9 @@ class MyTorchModel(nn.Module):
         self.out_path = out_path
 
         self.anomaly_map_generator = AnomalyMapGenerator()
+
+        self.segmentor = DiffSeg(torch.tensor(KL_THRESHOLD).flatten(), self.NUM_POINTS, self.REFINEMENT, )
+ 
         self.DiffSegParamModel = MyDiffSegParamNet(
             in_channel = 64, # this depends on VAE latent channel
             KL_len = 4,
@@ -320,6 +325,7 @@ class MyTorchModel(nn.Module):
         self.generator = torch.Generator(device=self.pipe.device).manual_seed(seed)
 
         self.pipe.to(device=self.device) # "cuda"
+        self.segmentor.to(device=self.device) # "cuda"
         self.DiffSegParamModel.to(device=self.device) # "cuda"
 
     def check_settings(self, ref_cfg, cfg, title1, title2):
@@ -411,9 +417,9 @@ class MyTorchModel(nn.Module):
                 sag_scale = sag_scale,#  0.75,
                 num_images_per_prompt = 1,  # SAG for each latent
             )
+            gen_imgs = self.pipe.vae.decode(gen_latents/self.pipe.vae.config.scaling_factor, return_dict=False)[0]
 
         pred_imgs = self.pipe.vae.decode(pred_latents/self.pipe.vae.config.scaling_factor, return_dict=False)[0]
-        gen_imgs = self.pipe.vae.decode(gen_latents/self.pipe.vae.config.scaling_factor, return_dict=False)[0]
 
 
         # TODO:: register_outputs in the way of dict , not tuple
@@ -586,8 +592,8 @@ class MyTorchModel(nn.Module):
                         attn_maps,
                     )
                     # Update attn_maps
-                    _attn_maps = self.update_attn_maps(_attn_maps, attn_maps, timestep)
-                    pred_noises[idx] = pred_noises[idx] + noise_pred.squeeze(0) / timestep
+                    _attn_maps = attn_maps
+                    pred_noises[idx] = noise_pred.squeeze(0).clone()
                     # compute the original sample x_t -> x_0
                     latent = self.pipe.scheduler.step(noise_pred, timestep, latent, **extra_step_kwargs).pred_original_sample
                 else:
@@ -609,12 +615,16 @@ class MyTorchModel(nn.Module):
 
                 # Update progress bar
                 progress_bar.update()
+            progress_bar.close()
 
 
 
         # parts segmentation
         KL_THRESHOLDS = self.DiffSegParamModel(latents)  
-        pred_masks = self.segment_with_attn_maps(net_attn_maps,KL_THRESHOLDS)
+        if self.training_mask:
+            pred_masks = self.segment_with_attn_maps(net_attn_maps,KL_THRESHOLDS)
+        else:
+            pred_masks = torch.randint(5,latents.shape, device=KL_THRESHOLDS.device)
         del net_attn_maps
         gc.collect()
 
@@ -642,19 +652,24 @@ class MyTorchModel(nn.Module):
                     prompt_embeds,
                     attn_maps,
                 )
-                _attn_maps = self.update_attn_maps(_attn_maps, attn_maps, timestep)
+                _attn_maps = attn_maps
                 gen_latent = self.pipe.scheduler.step(noise_pred, timestep, noise, **extra_step_kwargs).pred_original_sample
 
                 gen_latents[idx] = gen_latent.squeeze(0).clone()
                 gen_attn_maps.append(_attn_maps)
                 # Update progress bar
                 progress_bar.update()
+            progress_bar.close()
 
 
         # parts segmentation
         gen_KL_THRESHOLDS = self.DiffSegParamModel(gen_latents)  
-        gen_masks = self.segment_with_attn_maps(gen_attn_maps,gen_KL_THRESHOLDS)
-
+        if self.training_mask:
+            gen_masks = self.segment_with_attn_maps(gen_attn_maps,gen_KL_THRESHOLDS)
+        else:
+            gen_masks = torch.randint(5,latents.shape, device=gen_KL_THRESHOLDS.device)
+        del gen_attn_maps
+        gc.collect()
 
 
         self.pipe.maybe_free_model_hooks()
@@ -897,8 +912,8 @@ class MyTorchModel(nn.Module):
         pred_masks = []
         for attn_maps, KL_THRESHOLD in zip(net_attn_maps, KL_THRESHOLDS):
             # KL_THRESHOLD = torch.tensor([0.003]*4) 
-            segmentor = DiffSeg(KL_THRESHOLD.flatten(), self.NUM_POINTS, self.REFINEMENT, )
-            segmentor.to(device=self.device) # "cuda"
+            self.segmentor.set_KL_THRESHOLD(KL_THRESHOLD.flatten())
+           
             weights_dict = self.split_attn_maps(attn_maps,detach=False,)
             # self.store_attn_map(weights_dict)# weight_size depends on VAE layer num
             weights_list = [
@@ -908,8 +923,8 @@ class MyTorchModel(nn.Module):
                 weights_dict["weight_8"],
                 # weights_dict["weight_4"],
             ]
-            weight_ratio = torch.tensor(segmentor.get_weight_rato(weights_list)).to(device=self.device)
-            pred = segmentor.segment(*weights_list, weight_ratio=weight_ratio,) # b x 512 x 512
+            weight_ratio = torch.tensor(self.segmentor.get_weight_rato(weights_list)).to(device=self.device)
+            pred = self.segmentor.segment(*weights_list, weight_ratio=weight_ratio,) # b x 512 x 512
 
             pred_masks.append(torch.Tensor(pred))
         pred_masks = torch.stack(pred_masks, dim=0)

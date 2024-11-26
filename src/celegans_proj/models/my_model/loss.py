@@ -43,8 +43,8 @@ class MyLoss(nn.Module):
         self.ce_loss = MulticlassCrossEntropyLoss(ignore_index=None)
         self.focal_loss = FocalLoss(ignore_index=None)
         self.dice_loss = ClassBalancedDiceLoss(ignore_index=None)
-        self.hist_loss = HistLoss(ignore_index=0)
-        self.entropy_loss = EntropyLoss()
+        # self.hist_loss = HistLoss(ignore_index=0)
+        # self.entropy_loss = EntropyLoss()
 
     def forward(
         self,
@@ -59,9 +59,11 @@ class MyLoss(nn.Module):
         """
 
         loss = self.loss_image_weight * self.compute_recon_loss(outputs['pred_imgs'], outputs['imgs'], perceptual="ssim")
+        loss += self.loss_image_weight * self.compute_recon_loss(outputs['anomaly_maps'], torch.zeros(outputs['anomaly_maps'].shape, device=outputs['anomaly_maps'].device))
 
         if "vae" in self.train_models \
-            and "diffsion" in self.train_models:
+            and "diffusion" in self.train_models:
+
             loss += self.loss_latent_weight * self.compute_recon_loss(outputs['pred_latents'], outputs['latents'])
             loss += self.loss_noise_weight * self.compute_recon_loss(outputs['pred_noises'], outputs['noises'], )
             loss += self.loss_gen_weight * self.compute_recon_loss(outputs['gen_imgs'], outputs['imgs'], )
@@ -71,11 +73,12 @@ class MyLoss(nn.Module):
             loss += self.loss_emb_weight * self.compute_embedding_loss(outputs['pred_latents'], outputs['latents'],)
 
             loss += self.loss_mask_weight * self.compute_recon_loss(outputs['KL_THRESHOLDS'], outputs['gen_KL_THRESHOLDS'], )
-            loss += self.loss_mask_weight * self.compute_segmentation_loss(outputs['pred_masks'], outputs['gen_masks'], )
+            # loss += self.loss_mask_weight * self.compute_segmentation_loss(outputs['pred_masks'], outputs['gen_masks'], )
+            loss += self.loss_mask_weight * self.compute_recon_loss(outputs['pred_masks'], outputs['gen_masks'], )
 
             loss += self.loss_kl_weight * outputs['posterior'].kl().mean()# kl loss
 
-        elif "diffsion" in self.train_models:
+        elif "diffusion" in self.train_models:
             loss += self.loss_latent_weight * self.compute_recon_loss(outputs['pred_latents'], outputs['latents'])
             loss += self.loss_noise_weight * self.compute_recon_loss(outputs['pred_noises'], outputs['noises'], )
             loss += self.loss_gen_weight * self.compute_recon_loss(outputs['gen_imgs'], outputs['imgs'], )
@@ -86,7 +89,8 @@ class MyLoss(nn.Module):
 
 
             loss += self.loss_mask_weight * self.compute_recon_loss(outputs['KL_THRESHOLDS'], outputs['gen_KL_THRESHOLDS'], )
-            loss += self.loss_mask_weight * self.compute_segmentation_loss(outputs['pred_masks'], outputs['gen_masks'], )
+            # loss += self.loss_mask_weight * self.compute_segmentation_loss(outputs['pred_masks'], outputs['gen_masks'], )
+            loss += self.loss_mask_weight * self.compute_recon_loss(outputs['pred_masks'], outputs['gen_masks'], )
 
         elif "vae" in self.train_models:
             loss += self.loss_kl_weight * outputs['posterior'].kl().mean()# kl loss
@@ -107,7 +111,7 @@ class MyLoss(nn.Module):
         bsz = pred.shape[0]
         pred = pred.reshape(bsz, -1)
         gen = gen.reshape(bsz, -1)
-        target = torch.ones(pred.shape[0])
+        target = torch.ones(pred.shape[0], device=pred.device)
 
         loss = F.cosine_embedding_loss(
             pred, gen, target, 
@@ -116,8 +120,8 @@ class MyLoss(nn.Module):
         return loss
 
 
-    @staticmethod
     def compute_segmentation_loss(
+        self,
         pred, gen,
     ):
 
@@ -129,15 +133,15 @@ class MyLoss(nn.Module):
         sup_focal = self.focal_loss(pred,gen)
         sup_dice = self.dice_loss(pred,gen)
         # sup_hist = self.hist_loss(pred,rand_gt)
-        sup_entro = self.entropy_loss(pred)
-        sup_loss = sup_ce + sup_focal + sup_dice + sup_entro#  + sup_hist
+        # sup_entro = self.entropy_loss(pred)
+        sup_loss = sup_ce + sup_focal + sup_dice #+ sup_entro + sup_hist
 
-        unsup_loss = 0
+        # unsup_loss = 0
         # unsup_hist = self.hist_loss(gen,rand_gt)
-        unsup_entro = self.entropy_loss(gen)
-        unsup_loss = unsup_entro#  + unsup_hist
+        # unsup_entro = self.entropy_loss(gen)
+        # unsup_loss = unsup_entro + unsup_hist
 
-        loss = sup_loss + unsup_loss
+        loss = sup_loss # + unsup_loss
         return loss
 
 
@@ -150,6 +154,17 @@ class MyLoss(nn.Module):
         assert pred.shape == target.shape,\
             f"{pred.shape=}\t{target.shape=}"
 
+        if pred.dtype == torch.int64:
+            pred = pred.to(torch.float)
+        if target.dtype == torch.int64:
+            target = target.to(torch.float)
+
+        if pred.min() < 0.0 or target.min() < 0.0\
+            or pred.max() > 1.0 or target.max() > 1.0:
+            pred  = MyLoss.min_max_scaling(pred)
+            target  = MyLoss.min_max_scaling(target)
+
+
         loss = F.mse_loss(pred, target)
 
         if perceptual=="ssim":
@@ -158,10 +173,6 @@ class MyLoss(nn.Module):
             if pred.shape[1] == 1:
                 pred = MyLoss.cvt_channel_gray2RGB(pred)
                 target = MyLoss.cvt_channel_gray2RGB(target)
-
-            if pred.min() < 0.0 or target.min() < 0.0:
-                pred  = MyLoss.min_max_saling(pred)
-                target  = MyLoss.min_max_saling(target)
 
             loss += 1 - lpips(pred, target, 
                               net_type='squeeze', normalize=True,
@@ -187,20 +198,36 @@ class MulticlassCrossEntropyLoss(nn.Module):
         self.ignore_index = ignore_index
 
     def forward(self, logits, targets):
-        probabilities = logits
 
-        probabilities = nn.Softmax(dim=1)(logits)
+        # if logits.dtype == torch.int64:
+        #     logits = logits.to(torch.float)
+
+        # probabilities = logits
+        # probabilities = nn.Softmax(dim=1)(logits)
+
+        # TODO :: match class_idx
+        # print(f"in multi class segmentation loss\n\t{logits.shape=}{logits.dtype=}\n\t{targets.shape=}{targets.dtype=}")
+
+        if logits.shape[1] >= targets.shape[1]:
+            num_classes = logits.shape[1]
+        else:
+            num_classes = targets.shape[1]
+        logits_one_hot = torch.nn.functional.one_hot(logits.squeeze(1), num_classes=num_classes)
+        # Convert from NHWC to NCHW
+        logits_one_hot = logits_one_hot.permute(0, 3, 1, 2).type(torch.float)
+
         # end if
-        targets_one_hot = torch.nn.functional.one_hot(targets.squeeze(1), num_classes=logits.shape[1])
-        # print(targets_one_hot.shape)
+        targets_one_hot = torch.nn.functional.one_hot(targets.squeeze(1), num_classes=num_classes)
         # Convert from NHWC to NCHW
         targets_one_hot = targets_one_hot.permute(0, 3, 1, 2).type(torch.float)
 
         if self.ignore_index is not None:
+            logits_one_hot = torch.concat([logits_one_hot[:,:self.ignore_index],logits_one_hot[:,self.ignore_index+1:]],dim=1)
             targets_one_hot = torch.concat([targets_one_hot[:,:self.ignore_index],targets_one_hot[:,self.ignore_index+1:]],dim=1)
-            probabilities = torch.concat([probabilities[:,:self.ignore_index],probabilities[:,self.ignore_index+1:]],dim=1)
+            # probabilities = torch.concat([probabilities[:,:self.ignore_index],probabilities[:,self.ignore_index+1:]],dim=1)
         
-        return self.ce_loss(probabilities,targets_one_hot)
+        # return self.ce_loss(probabilities,targets_one_hot)
+        return self.ce_loss(logits_one_hot,targets_one_hot)
 
 class ClassBalancedDiceLoss(nn.Module):
     def __init__(self,ignore_index=None):
@@ -208,18 +235,34 @@ class ClassBalancedDiceLoss(nn.Module):
         self.ignore_index = ignore_index
 
     def forward(self, prediction, target):
-        probabilities = torch.softmax(prediction,dim=1)
-        targets_one_hot = torch.nn.functional.one_hot(target.squeeze(1), num_classes=prediction.shape[1])
+
+        # if prediction.dtype == torch.int64:
+        #     prediction = prediction.to(torch.float)
+
+        # probabilities = torch.softmax(prediction,dim=1)
+
+        if prediction.shape[1] >= target.shape[1]:
+            num_classes = prediction.shape[1]
+        else:
+            num_classes = target.shape[1]
+        prediction_one_hot = torch.nn.functional.one_hot(prediction.squeeze(1), num_classes=num_classes)
+        # Convert from NHWC to NCHW
+        prediction_one_hot = prediction_one_hot.permute(0, 3, 1, 2).type(torch.float)
+
+
+        targets_one_hot = torch.nn.functional.one_hot(target.squeeze(1), num_classes=num_classes)
         # Convert from NHWC to NCHW
         targets_one_hot = targets_one_hot.permute(0, 3, 1, 2).type(torch.float)
 
         if self.ignore_index is not None:
+            prediction_one_hot = torch.concat([prediction_one_hot[:,:self.ignore_index],prediction_one_hot[:,self.ignore_index+1:]],dim=1)
             targets_one_hot = torch.concat([targets_one_hot[:,:self.ignore_index],targets_one_hot[:,self.ignore_index+1:]],dim=1)
-            probabilities = torch.concat([probabilities[:,:self.ignore_index],probabilities[:,self.ignore_index+1:]],dim=1)
+            # probabilities = torch.concat([probabilities[:,:self.ignore_index],probabilities[:,self.ignore_index+1:]],dim=1)
 
 
         class_weights = self._calculate_class_weights(targets_one_hot)
-        dice_loss = self._dice_loss(probabilities, targets_one_hot)
+        # dice_loss = self._dice_loss(probabilities, targets_one_hot)
+        dice_loss = self._dice_loss(prediction_one_hot, targets_one_hot)
         class_balanced_loss = class_weights * dice_loss
         return class_balanced_loss.mean()
 
@@ -272,10 +315,24 @@ class FocalLoss(nn.Module):
                 raise ValueError('smooth value should be in [0,1]')
 
     def forward(self, logit, target):
-        logit = torch.softmax(logit, dim=1)
-        if self.apply_nonlin is not None:
-            logit = self.apply_nonlin(logit)
-        num_class = logit.shape[1]
+
+        # if logit.dtype == torch.int64:
+        #     logit = logit.to(torch.float)
+
+        # logit = torch.softmax(logit, dim=1)
+        # if self.apply_nonlin is not None:
+        #     logit = self.apply_nonlin(logit)
+
+        # num_class = logit.shape[1]
+
+        if logit.shape[1] >= target.shape[1]:
+            num_class = logit.shape[1]
+        else:
+            num_class = target.shape[1]
+        logit_one_hot = torch.nn.functional.one_hot(logit.squeeze(1), num_classes=num_class)
+        # Convert from NHWC to NCHW
+        logit = logit_one_hot.permute(0, 3, 1, 2).type(torch.float)
+
 
         if logit.dim() > 2:
             # N,C,d1,d2 -> N,C,m (m=d1*d2*...)
@@ -338,7 +395,21 @@ class HistLoss(nn.Module):
         self.ignore_index = ignore_index
 
     def forward(self,pred, trg):
-        pred = torch.softmax(pred,dim=1)
+
+        # if pred.dtype == torch.int64:
+        #     pred = pred.to(torch.float)
+
+        # pred = torch.softmax(pred,dim=1)
+
+        if pred.shape[1] >= trg.shape[1]:
+            num_classes = pred.shape[1]
+        else:
+            num_classes = trg.shape[1]
+        pred_one_hot = torch.nn.functional.one_hot(pred.squeeze(1), num_classes=num_classes)
+        # Convert from NHWC to NCHW
+        pred = pred_one_hot.permute(0, 3, 1, 2).type(torch.float)
+
+
         new_trg = torch.zeros_like(trg).repeat(1, pred.shape[1], 1, 1).long()
         new_trg = new_trg.scatter(1, trg, 1).float()
         diff = torch.abs(new_trg.mean((2, 3)) - pred.mean((2, 3)))
@@ -352,7 +423,12 @@ class EntropyLoss(nn.Module):
         super().__init__()
 
     def forward(self,pred):
+
+        if pred.dtype == torch.int64:
+            pred = pred.to(torch.float)
+
         prob = nn.Softmax(dim=1)(pred)
+
         return (-1*prob*((prob+1e-5).log())).mean()
 
 
@@ -362,6 +438,7 @@ class EntropyLoss(nn.Module):
 if __name__ == "__main__":
     # __debug__ = True # when you execute without any option 
     training = True # False # True # 
+    training_mask = True
     B = 1
     C,W,H = (1,256,256)
     cuda_0 = torch.device("cuda:0")
@@ -388,6 +465,7 @@ if __name__ == "__main__":
 
     model = MyTorchModel(
             training = training,
+            training_mask = training_mask,
             train_models=["vae", "diffusion"],
     ).to(device=cuda_0)
 
@@ -406,6 +484,10 @@ if __name__ == "__main__":
 
     ) 
     loss = loss_fn(output)
+
+    print(loss)
+
     loss.backward()
+
     print(loss)
 

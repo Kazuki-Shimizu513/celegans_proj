@@ -24,10 +24,11 @@ from anomalib.models import (
 )
 from anomalib.engine import Engine
 from anomalib.data.utils import TestSplitMode
+from anomalib.metrics import ManualThreshold
 
 import wandb
 
-from celegans_proj.run.image.wddd2 import (
+from celegans_proj.run.image import (
     WDDD2_AD,
     YouTransform,
 ) 
@@ -133,9 +134,11 @@ def train(
         model = SimSID()
     elif model_name == "MyModel":
         model = MyModel(
-            training = True,
-            learning_rate = 1e-8,
+            learning_rate = 1e-6,# 1e-8,
             train_models=["vae", "diffusion", ],
+            # train_models=["vae",],
+            training = True,
+            training_mask = False,#True,
             out_path = str(out_dir),
         )
     else:
@@ -166,14 +169,14 @@ if __name__ == "__main__":
     logging.basicConfig(filename='./logs/debug.log', filemode='w', level=logging.DEBUG)
 
     # exp_name  = "exp_example"
-    exp_name  = "exp_20241119"
+    exp_name  = "exp_20241125"
 
     out_dir = "/mnt/c/Users/compbio/Desktop/shimizudata/"
     log_dir  = "./logs"
     in_dir = "/mnt/e/WDDD2_AD"
     model_name = "MyModel"
     target_data = "wildType"
-    threshold =  "F1AdaptiveThreshold"
+    threshold =  ManualThreshold(default_value=0.9) # "F1AdaptiveThreshold"
     metric_name = "pixel_AUROC"
 
 

@@ -24,6 +24,7 @@ class MyModel(AnomalyModule):
         self,
 
         training = True,
+        training_mask = False,#True,
         learning_rate = 1e-8,
         train_models=["vae", "diffusion"],
 
@@ -41,6 +42,7 @@ class MyModel(AnomalyModule):
         # Reproducibility
         self.seed = seed # 44,
         self.training = training # True,
+        self.training_mask = training_mask # True,
         self.learning_rate = learning_rate 
         self.train_models= train_models 
 
@@ -66,6 +68,7 @@ class MyModel(AnomalyModule):
             # Reproducibility
             seed =self.seed,
             training = self.training,
+            training_mask = self.training_mask,
             train_models=self.train_models,
 
             # Development
@@ -203,7 +206,8 @@ class MyModel(AnomalyModule):
         """
         del args, kwargs  # These variables are not used.
 
-        loss = self.loss(*self.model(batch["image"]))
+        # loss = self.loss(*self.model(batch["image"]))
+        loss = self.loss(self.model(batch["image"]))
         self.log("train_loss", loss.item(), on_epoch=True, prog_bar=True, logger=True)
         return {"loss": loss}
 

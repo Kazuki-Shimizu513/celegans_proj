@@ -25,6 +25,9 @@ class DiffSeg(nn.Module):
         self.p=p 
         self.device = device
 
+    def set_KL_THRESHOLD(self,new_KL_THRESHOLD):
+        self.kl_threshold = new_KL_THRESHOLD
+
     def forward(self, weight_64, weight_32, weight_16, weight_8, weight_ratio = None ):
         preds = self.segment(
             weight_64,
