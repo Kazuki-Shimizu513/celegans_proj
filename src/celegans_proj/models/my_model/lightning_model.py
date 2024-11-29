@@ -207,7 +207,7 @@ class MyModel(AnomalyModule):
         del args, kwargs  # These variables are not used.
 
         # loss = self.loss(*self.model(batch["image"]))
-        loss = self.loss(self.model(batch["image"]))
+        loss = self.loss(self.model(batch))
         self.log("train_loss", loss.item(), on_epoch=True, prog_bar=True, logger=True)
         return {"loss": loss}
 
@@ -225,11 +225,11 @@ class MyModel(AnomalyModule):
           These are required in `validation_epoch_end` for feature concatenation.
         """
 
-        output = self.model(batch["image"])
+        output = self.model(batch)
         # Add anomaly maps and predicted scores to the batch.
 
-        batch["anomaly_maps"] = output["anomaly_map"]
-        batch["pred_scores"] = output["pred_score"]
+        batch["anomaly_maps"] = output["anomaly_maps"]
+        batch["pred_scores"] = output["pred_scores"]
 
         return batch
 

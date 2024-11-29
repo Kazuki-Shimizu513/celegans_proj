@@ -46,11 +46,12 @@ from transformers import (
     # CLIPConfig,
     # CLIPModel,
 )
+from anomalib.data.utils.image import save_image# , show_image
 
 # from components import (
 #     CrossAttnStoreProcessor,
 #     gaussian_blur_2d,
-#     # min_max_scaling,
+#     min_max_scaling,
 #     DiffSeg, 
 # )
 # from anomaly_map import AnomalyMapGenerator
@@ -59,7 +60,7 @@ from transformers import (
 from .components import (
     CrossAttnStoreProcessor,
     gaussian_blur_2d,
-    # min_max_scaling,
+    min_max_scaling,
     DiffSeg, 
 )
 from .anomaly_map import AnomalyMapGenerator
@@ -366,14 +367,15 @@ class MyTorchModel(nn.Module):
     def cvt_channel_gray2RGB(self,x):
         return x.repeat(1, 3, 1, 1)
 
-    def forward(self, imgs, prompt="."):
+    def forward(self, batch, prompt="."):
         """ forward function for my torch model
             args:
-                Bach: which contains image, label, mask,
+                Bach: which contains ['image_path', 'label', 'image', 'mask']
             Returns:
                 Bach: which contains image, mask, label, pred_image, pred_mask,  prediction_score, anomaly_map,
         """
-
+       
+        imgs = batch['image']
         # imgs = self.cvt_channel_gray2RGB(imgs)
         posterior = self.pipe.vae.encode(imgs, return_dict=False)[0]
         latents = posterior.sample(generator=self.generator)
@@ -417,6 +419,7 @@ class MyTorchModel(nn.Module):
                 sag_scale = sag_scale,#  0.75,
                 num_images_per_prompt = 1,  # SAG for each latent
             )
+
             gen_imgs = self.pipe.vae.decode(gen_latents/self.pipe.vae.config.scaling_factor, return_dict=False)[0]
 
         pred_imgs = self.pipe.vae.decode(pred_latents/self.pipe.vae.config.scaling_factor, return_dict=False)[0]
@@ -424,7 +427,11 @@ class MyTorchModel(nn.Module):
 
         # TODO:: register_outputs in the way of dict , not tuple
         output = dict(
-            imgs=imgs,
+            image=batch['image'],
+            image_path=batch['image_path'],
+            mask=batch['mask'],
+            label=batch['label'],
+
             pred_imgs=pred_imgs,
 
             posterior=posterior,
@@ -470,10 +477,28 @@ class MyTorchModel(nn.Module):
             anomaly_maps = anomaly_maps,
             pred_scores = pred_scores
         )
+        # self.store_imgs(output) # TODO:: move to _Visualizer CallBack
         if not self.training: # # inference phase
-            output =  {"anomaly_map": output["anomaly_maps"], "pred_score": output["pred_scores"]}
-
+            output =  {"anomaly_maps": output["anomaly_maps"], "pred_scores": output["pred_scores"]}
         return output
+
+
+    def store_imgs(self, output,
+        latent_kind = ['latents', 'pred_latents', 'noises', 'pred_noises', 'gen_latents',],
+        img_kind = ['image', 'mask', 'pred_imgs',  'gen_imgs', 'pred_masks', 'gen_masks', 'anomaly_maps',],
+    ):
+        root = Path(self.out_path)
+        for k, v in output.items():
+            if k in img_kind:
+                # print(f"{k}\n\t{v.shape=}\n")
+                if v.ndim == 4:
+                    v=v.squeeze(0)
+                if v.max() <= 1.0:
+                    v=min_max_scaling(v) * 255.0
+                v = v.repeat(3, 1, 1).permute(1, 2, 0) # C*3, W, H -> W, H, C*3,
+                # print(f"{k}\n\t{v.shape=}\n")
+                # save_image(image=np.array(v.numpy(force=True),np.uint8), root=root, filename=f"{k}.tif")
+                save_image(image=np.array(v.numpy(force=True),np.uint8), root=root, filename=f"{k}.png")
 
     def diffusion_step(
         self,
@@ -541,7 +566,7 @@ class MyTorchModel(nn.Module):
                                           device=latents.device,).long()
             noisy_latents = self.pipe.scheduler.add_noise(latents, noises, timesteps)
         else:
-            timesteps = torch.tensor([self.ddpm_num_steps] * len(latents))
+            timesteps = torch.tensor([self.ddpm_num_steps-1] * len(latents))
             noisy_latents = latents.clone()
         pred_noises = torch.zeros_like(noises)
 
@@ -643,7 +668,7 @@ class MyTorchModel(nn.Module):
         if self.training_mask:
             pred_masks = self.segment_with_attn_maps(net_attn_maps,KL_THRESHOLDS)
         else:
-            pred_masks = torch.randint(5,(latents.shape[0],1,256,256), device=KL_THRESHOLDS.device)
+            pred_masks = torch.randint(5,(latents.shape[0],256,256), device=KL_THRESHOLDS.device)
         del net_attn_maps
         gc.collect()
 
@@ -686,7 +711,7 @@ class MyTorchModel(nn.Module):
         if self.training_mask:
             gen_masks = self.segment_with_attn_maps(gen_attn_maps,gen_KL_THRESHOLDS)
         else:
-            gen_masks = torch.randint(5,(latents.shape[0],1,256,256), device=KL_THRESHOLDS.device)
+            gen_masks = torch.randint(5,(latents.shape[0],256,256), device=KL_THRESHOLDS.device)
         del gen_attn_maps
         gc.collect()
 
@@ -944,6 +969,7 @@ class MyTorchModel(nn.Module):
             ]
             weight_ratio = torch.tensor(self.segmentor.get_weight_rato(weights_list)).to(device=self.device)
             pred = self.segmentor.segment(*weights_list, weight_ratio=weight_ratio,) # b x 512 x 512
+            pred = pred.squeeze(0)
 
             pred_masks.append(torch.Tensor(pred))
         pred_masks = torch.stack(pred_masks, dim=0)
@@ -987,13 +1013,34 @@ class MyTorchModel(nn.Module):
 
 if __name__ == "__main__":
     # __debug__ = True # when you execute without any option 
-    training = False # True # 
+
+    # image_path      ['/mnt/e/WDDD2_AD/wildType/train/good/wt_N2_081105_03_T28_Z34.tiff']
+    # label   tensor([0], device='cuda:0')
+    # image   tensor([[[[-1.3911, -1.3935, -1.3924,  ..., -1.3850, -1.3887, -1.3922],
+    #                   [-1.3971, -1.3901, -1.3910,  ..., -1.3846, -1.3820, -1.3861],
+    #                   [-1.3799, -1.3889, -1.3901,  ..., -1.3844, -1.3852, -1.3824],
+    #                   ...,
+    #                   [-1.3875, -1.3845, -1.3844,  ..., -1.4095, -1.4101, -1.4099],
+    #                   [-1.3790, -1.3942, -1.3882,  ..., -1.4054, -1.4141, -1.4114],
+    #                   [-1.3888, -1.3918, -1.3906,  ..., -1.4129, -1.4155, -1.4158]]]],device='cuda:0')
+    # mask    tensor([[[0, 0, 0,  ..., 0, 0, 0],
+    #                  [0, 0, 0,  ..., 0, 0, 0],
+    #                  [0, 0, 0,  ..., 0, 0, 0],
+    #                  ...,
+    #                  [0, 0, 0,  ..., 0, 0, 0],
+    #                  [0, 0, 0,  ..., 0, 0, 0],
+    #                  [0, 0, 0,  ..., 0, 0, 0]]], device='cuda:0', dtype=torch.uint8)
+
+    out_path = '/mnt/c/Users/compbio/Desktop/shimizudata/test'
+    cuda_0 = torch.device("cuda:0")
+    training = True #False # True # 
+    training_mask = False # True # 
+
     B = 1
     C,W,H = (1,256,256)
-    cuda_0 = torch.device("cuda:0")
-    img = torch.randn(B,C,W,H,).to(device=cuda_0)
 
     img_path = "/mnt/d/WDDD2/TIF_GRAY/wt_N2_081113_01/wt_N2_081113_01_T60_Z49.tiff"
+    img = torch.randn(B,C,W,H,).to(device=cuda_0)
     img = Image.open(img_path)
     transforms = v2.Compose([
                     v2.Grayscale(), # Wide resNet has 3 channels
@@ -1010,16 +1057,28 @@ if __name__ == "__main__":
     img = img.to(device=cuda_0)
     img = img.unsqueeze(0)
 
-    print(f"{img.shape=}")
+    msk = torch.zeros(B,W,H,).to(device=cuda_0)
+    lbl = torch.tensor([np.int64(0)]).to(device=cuda_0)
+
+
+    batch = dict(
+        image_path=[img_path],
+        image=img,
+        mask=msk,
+        label=lbl,
+    )
 
     model = MyTorchModel(
             training = training,
+            training_mask = training_mask,
             train_models=["vae", "diffusion"],
     ).to(device=cuda_0)
     # model = torch.compile(model)
 
     # output = model.generate()
-    output = model(img)
-
-    print(f"{output.keys()=}")
+    output = model(batch)
+    print(f"{output.keys()=}") # dict_keys(['image', 'image_path', 'mask', 'label', 'pred_imgs', 'posterior', 'latents', 'pred_latents', 'noises', 'pred_noises', 'gen_imgs', 'gen_latents', 'KL_THRESHOLDS', 'gen_KL_THRESHOLDS', 'pred_masks', 'gen_masks', 'anomaly_maps', 'pred_scores'])
+    
+    # for k, v in output.items():
+    #     print(f"{k}\n\t{v}\n")
 

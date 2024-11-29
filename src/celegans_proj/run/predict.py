@@ -23,7 +23,7 @@ from anomalib.models import (
     ReverseDistillation,
 )
 from anomalib.engine import Engine
-from anomalib.data.utils import TestSplitMode
+from anomalib.data.utils import TestSplitMode,ValSplitMode
 
 import wandb
 
@@ -113,6 +113,8 @@ def predict(
         eval_batch_size = batch,
         num_workers = worker, 
         task =  task, 
+        val_split_mode = ValSplitMode.FROM_TEST,
+        val_split_ratio = 0.01,
         image_size = (resolution,resolution),
         transform = transforms,
         seed  = 44,

@@ -22,7 +22,11 @@ References:
 import logging
 from collections.abc import Sequence
 from pathlib import Path
+import math
+from PIL import Image
 
+import numpy as np
+import pandas as pd 
 from pandas import DataFrame
 
 import torch 
@@ -147,6 +151,10 @@ class WDDD2_AD(AnomalibDataModule):
         val_split_mode: ValSplitMode | str = ValSplitMode.SAME_AS_TEST,
         val_split_ratio: float = 0.5,
         seed: int | None = None,
+        debug:bool = False, 
+        debug_data_ratio:int = 0.1, 
+        add_anomalous: bool = False, 
+ 
     ) -> None:
         super().__init__(
             train_batch_size=train_batch_size,
@@ -167,6 +175,10 @@ class WDDD2_AD(AnomalibDataModule):
         self.root = Path(root)
         self.category = category
 
+        self.debug =debug
+        self.debug_data_ratio = debug_data_ratio
+        self.add_anomalous = add_anomalous 
+
     def _setup(self, _stage: str | None = None) -> None:
         """Set up the datasets and perform dynamic subset splitting.
 
@@ -185,14 +197,54 @@ class WDDD2_AD(AnomalibDataModule):
             split=Split.TRAIN,
             root=self.root,
             category=self.category,
+            add_anomalous = self.add_anomalous , 
         )
+
+        self.val_data = WDDD2_AD_DS(
+            task=self.task,
+            transform=self.eval_transform,
+            split=Split.VAL,
+            root=self.root,
+            category=self.category,
+            add_anomalous = self.add_anomalous , 
+        )
+
         self.test_data = WDDD2_AD_DS(
             task=self.task,
             transform=self.eval_transform,
             split=Split.TEST,
             root=self.root,
             category=self.category,
+            add_anomalous = self.add_anomalous , 
         )
+
+        if self.debug:
+            for attribute in ("train_data", "val_data", "test_data"):
+                dataset = getattr(self, attribute)
+                delattr(self, attribute)
+                subset = self.random_subsampling(
+                        dataset,
+                        seed = self.seed,
+                        ratio =self.debug_data_ratio,
+                 )
+                subset.samples = _add_anomalous(subset.samples, length=3)
+                setattr(self, attribute, subset)
+
+    def random_subsampling(
+        self,
+        dataset,
+        seed = 44,
+        ratio =0.1,
+    ):
+        subset :list[AnomalibDataset] = list()
+        subset_length = math.floor(len(dataset.samples) * ratio)
+        # perform random subsampling
+        random_state = torch.Generator().manual_seed(seed) if seed else None
+        indices = torch.randperm(len(dataset.samples), generator=random_state)
+        subset_indices = torch.split(indices, subset_length)
+        subset =  dataset.subsample(subset_indices[0])
+        # print(f"total iterations: {len(subset)=}")
+        return subset
 
 #     def prepare_data(self) -> None:
 #         """Download the dataset if not available.
@@ -297,13 +349,15 @@ class WDDD2_AD_DS(AnomalibDataset):
         category: str = "oneCell",
         transform: Transform | None = None,
         split: str | Split | None = None,
+        add_anomalous: bool = False, 
     ) -> None:
         super().__init__(task=task, transform=transform)
 
         self.root_category = Path(root) / Path(category)
         self.category = category
         self.split = split
-        self.samples = make_WDDD2_dataset(self.root_category, split=self.split, extensions=IMG_EXTENSIONS)
+        self.samples = make_WDDD2_dataset(self.root_category, split=self.split, extensions=IMG_EXTENSIONS, add_anomalous = add_anomalous, )
+    
 
     def setup(self,):
         pass
@@ -313,6 +367,7 @@ def make_WDDD2_dataset(
     root: str | Path,
     split: str | Split | None = None,
     extensions: Sequence[str] | None = None,
+    add_anomalous: bool = False, 
 ) -> DataFrame:
     """Create WDDD2 AD samples by parsing the WDDD2 AD data file structure.
 
@@ -400,8 +455,69 @@ def make_WDDD2_dataset(
     if split:
         samples = samples[samples.split == split].reset_index(drop=True)
 
+    if add_anomalous:
+        samples = _add_anomalous(samples, length=10)
+
     return samples
 
+def gen_anomalous(img_path, msk_path, size=(600,600,),):
+    img = Image.fromarray(np.zeros(size, dtype=np.uint8))
+    msk = Image.fromarray(np.ones(size, dtype=np.uint8))
+    img.save(img_path)
+    msk.save(msk_path)
+
+
+def _add_anomalous(samples: DataFrame, length: int=10) -> DataFrame:
+    """ add some anomalous samples for AUROC or F1 Metric CallBack
+
+    dict_keys(['image_path', 'label', 'image', 'mask'])
+    type(batch['image_path'])=<class 'str'>
+        batch['image_path']='/mnt/e/WDDD2_AD/wildType/train/good/wt_N2_081007_02_T42_Z3
+    3.tiff'
+    type(batch['label'])=<class 'numpy.int64'>
+        batch['label']=0
+    type(batch['image'])=<class 'torchvision.tv_tensors._image.Image'>
+        batch['image'].shape=torch.Size([1, 256, 256])
+    type(batch['mask'])=<class 'torchvision.tv_tensors._mask.Mask'>
+        batch['mask'].shape=torch.Size([256, 256])
+
+    print(f"{samples.iloc[0].map(type)=}") 
+    samples.iloc[0].map(type)=
+        path                   <class 'str'>
+        split                  <class 'str'>
+        label                  <class 'str'>
+        image_path             <class 'str'>
+        label_index    <class 'numpy.int64'>
+        mask_path              <class 'str'>
+        Name: 0, dtype: object
+
+    print(f"{samples.iloc[0]=}") 
+    samples.iloc[0]=
+        path                                    /mnt/e/WDDD2_AD/wildType
+        split                                                      train
+        label                                                       good
+        image_path     /mnt/e/WDDD2_AD/wildType/train/good/wt_N2_0810...
+        label_index                                                    0
+        mask_path
+        Name: 0, dtype: object
+    """
+    # print(f"{len(samples)=}")
+    anomalous_list = []
+    for l in range(length):
+        img_path = f"{samples.iloc[len(samples)-1, 0,]}/{samples.iloc[len(samples)-1, 1,]}/anomaly/{l:0=3}.png"
+        msk_path = f"{samples.iloc[len(samples)-1, 0,]}/ground_truth/anomaly/{l:0=3}_mask.png"
+        inner_list = [
+            samples.iloc[len(samples)-1, 0,], # "path"],
+            samples.iloc[len(samples)-1, 1,], # "split"],
+            "anomaly", # LabelName.ABNORMAL,
+            img_path,
+            np.int64(1),
+            msk_path,
+        ]
+        anomalous_list.append(inner_list)
+    anom_samples = DataFrame(anomalous_list, columns=samples.columns.values.tolist())
+    samples = pd.concat([samples, anom_samples])
+    return samples
 
 class YouTransform:
     """
@@ -609,6 +725,14 @@ if __name__ == "__main__":
                     # YouTransform(examples["mean"], alpha=0.2, )
                 ]) 
 
+    length=10
+    for phase in ("train", "val", "test"):
+        for l in range(length):
+            img_path = f"/mnt/e/WDDD2_AD/wildType/{phase}/anomaly/{l:0=3}.png"
+            msk_path = f"/mnt/e/WDDD2_AD/wildType/ground_truth/anomaly/{l:0=3}_mask.png"
+            gen_anomalous(img_path, msk_path, size=(600,600,),)
+     
+
     datamodule = WDDD2_AD(
         root = "/mnt/e/WDDD2_AD",
         category = "wildType",
@@ -616,14 +740,23 @@ if __name__ == "__main__":
         eval_batch_size = 32,
         num_workers = 30,
         task = TaskType.SEGMENTATION,# CLASSIFICATION,#  
+        val_split_mode = ValSplitMode.NONE,# .FROM_TEST,
+        # val_split_ratio = 0.01,
         image_size = (256,256),
         transform = transforms,
         seed  = 44,
+        debug =True, 
+        debug_data_ratio =0.01, 
+        add_anomalous = True, # False, 
     )
+    print("prepareing datamodule...")
     datamodule.setup()
+
+
     # "train_data", "val_data", "test_data"
     for attribute in ("train_data", "val_data", "test_data"):
         data_loader = getattr(datamodule,attribute)
+        print(f"total iterations: {len(data_loader)}")
         i, batch = next(enumerate(data_loader))
 
         print(batch.keys()) # dict_keys(['image_path', 'label', 'image', 'mask'])
@@ -631,5 +764,6 @@ if __name__ == "__main__":
         print(batch["label"])
         print(batch["image"].shape)
         print(batch["image"].shape)
+        print()
 
 

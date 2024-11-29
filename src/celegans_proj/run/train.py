@@ -23,7 +23,8 @@ from anomalib.models import (
     ReverseDistillation,
 )
 from anomalib.engine import Engine
-from anomalib.data.utils import TestSplitMode
+from anomalib.data.utils import TestSplitMode,ValSplitMode
+
 from anomalib.metrics import ManualThreshold
 
 import wandb
@@ -57,9 +58,14 @@ def train(
     resolution = 256,
     task = TaskType.SEGMENTATION, #CLASSIFICATION,#
     threshold =  "F1AdaptiveThreshold",
+    image_metrics  = ['BinaryF1Score'],
+    pixel_metrics = ['AUROC'],
+
     worker = 30,
     logger = logger, 
-    metric_name = "pixel_AUROC",
+    seed  =  44,
+    debug =  False, 
+    debug_data_ratio = 0.01, 
 ):
 
     out_dir = Path(out_dir)
@@ -69,16 +75,16 @@ def train(
     model_dir.mkdir(parents=True, exist_ok=True)
 
     checkpoint_callback = ModelCheckpoint(
-        monitor=metric_name, 
+        monitor="pixel_AUROC", # pixel_metrics[0], 
         mode='max',
         dirpath = str(model_dir),
-        filename='{epoch}-{pixel_AUROC:.2f}',
+        filename='{epoch}',
         save_top_k= 1,
     )
 
     callbacks = [
         checkpoint_callback,
-        EarlyStopping(metric_name),
+        EarlyStopping("pixel_AUROC"),
         DeviceStatsMonitor(),
     ]
 
@@ -108,12 +114,31 @@ def train(
         eval_batch_size = batch,
         num_workers = worker, 
         task = TaskType.SEGMENTATION,#CLASSIFICATION,#  
+        val_split_mode = ValSplitMode.FROM_TEST,
+        val_split_ratio = 0.01,
         image_size = (resolution,resolution),
         transform = transforms,
-        seed  = 44,
+        seed  = seed,# 44,
+        debug = debug, # True, 
+        debug_data_ratio = debug_data_ratio, # 0.01, 
+        add_anomalous=debug,
     )
+ 
     datamodule.setup()
 
+    for attribute in ("train_data", "val_data", "test_data"):
+        data_loader = getattr(datamodule,attribute)
+        print(f"total {attribute} iterations: {len(data_loader)}")
+
+    i, batch = next(enumerate(datamodule.train_data))
+    print(batch.keys()) # dict_keys(['image_path', 'label', 'image', 'mask'])
+    print(f"{type(batch['image_path'])=}\t{batch['image_path']=}")
+    print(f"{type(batch['label'])=}\t{batch['label']=}")
+    print(f"{type(batch['image'])=}\t{batch['image'].shape=}")
+    print(f"{type(batch['mask'])=}\t{batch['mask'].shape=}")
+    print()
+
+    # return 0
     print("prepareing model")
 
     if model_name == "Patchcore":
@@ -153,8 +178,13 @@ def train(
         callbacks = callbacks,
         default_root_dir= str(out_dir),
         threshold = threshold,
+        image_metrics=image_metrics,
+        pixel_metrics=pixel_metrics,
         max_epochs = -1,
     )
+    print(f"{engine.image_metric_names=}\n{engine.pixel_metric_names=}")
+    # engine._setup_anomalib_callbacks(model)
+    # print(f"{engine._cache.args["callbacks"]=}")
 
     print("starting Training")
     engine.fit(
@@ -177,7 +207,8 @@ if __name__ == "__main__":
     model_name = "MyModel"
     target_data = "wildType"
     threshold =  ManualThreshold(default_value=0.9) # "F1AdaptiveThreshold"
-    metric_name = "pixel_AUROC"
+    image_metrics  = ['F1Score']# Useless:['MinMax', 'AnomalyScoreDistribution',]
+    pixel_metrics = ['AUROC']# Useless:['MinMax', 'AnomalyScoreDistribution',]# 
 
 
     logger = WandbLogger(
@@ -197,12 +228,17 @@ if __name__ == "__main__":
         target_data = target_data,
         threshold =  threshold,
         logger = logger, 
-        metric_name = metric_name,
+        image_metrics  = image_metrics,
+        pixel_metrics = pixel_metrics,
+
 
         ckpt = None, 
         batch = 1,
         resolution =  256,
         task = TaskType.SEGMENTATION, #CLASSIFICATION,#
         worker = 30,
+        seed  =  44,
+        debug =  True, 
+        debug_data_ratio = 0.08, 
     )
 

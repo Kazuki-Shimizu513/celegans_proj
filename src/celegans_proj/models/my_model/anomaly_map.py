@@ -29,7 +29,7 @@ class AnomalyMapGenerator(nn.Module):
 
 
         anomaly_maps = self.compute_recon_distance(
-                        outputs["pred_imgs"], outputs["imgs"], 
+                        outputs["pred_imgs"], outputs["image"], 
                         mode = "L2", 
                       )
 
@@ -37,7 +37,7 @@ class AnomalyMapGenerator(nn.Module):
         # TODO :: or Class Histgram Maharanobis Distance using pred_mask
 
         pred_scores = self.compute_metrics(
-                        outputs["pred_imgs"], outputs["imgs"], 
+                        outputs["pred_imgs"], outputs["image"], 
                         outputs['pred_masks'], outputs['gen_masks'], 
                         anomaly_maps, 
                         mode=None,
@@ -85,16 +85,17 @@ class AnomalyMapGenerator(nn.Module):
             f"{pred_imgs.shape=}\t{imgs.shape=}"
 
         # Calc reconstruction metrics
+        scores = []
         if mode == "psnr":
-            scores = []
             for pred, img in zip(pred_imgs, imgs):
                 score = PSNR(pred, img, )
                 scores.append(score)
-            scores = torch.stack(scores, dim=0)
-            scores = 1 - self.min_max_scaling(scores)
         else:
-            scores = torch.max(anomaly_maps, dim=0).values
-
+            for ano_map in anomaly_maps:
+                score = torch.max(ano_map)
+                scores.append(score)
+        scores = torch.stack(scores, dim=0)
+        # print(f"recon  value : {scores},\n\t{scores.shape=}")
         # Calc segmentation metrics
         _scores = []
         for pred, gen in zip(pred_masks, gen_masks):
@@ -102,6 +103,7 @@ class AnomalyMapGenerator(nn.Module):
             score = 1 - mIoU.mean()
             _scores.append(score)
         _scores = torch.stack(_scores, dim=0)
+        # print(f"segment value : {_scores},\n\t{_scores.shape=}")
  
         scores = (scores + _scores)/2
 
@@ -119,11 +121,11 @@ class AnomalyMapGenerator(nn.Module):
         else:
             num_classes = gen.flatten().unique().size(dim=0)# .item()
 
-        pred_one_hot = torch.nn.functional.one_hot(pred.squeeze(1), num_classes=num_classes)
+        pred_one_hot = torch.nn.functional.one_hot(pred.unsqueeze(0), num_classes=num_classes)
         # Convert from NHWC to NCHW
         pred_one_hot = pred_one_hot.permute(0, 3, 1, 2)# .type(torch.float)
 
-        gen_one_hot = torch.nn.functional.one_hot(gen.squeeze(1), num_classes=num_classes)
+        gen_one_hot = torch.nn.functional.one_hot(gen.unsqueeze(0), num_classes=num_classes)
         # Convert from NHWC to NCHW
         gen_one_hot = gen_one_hot.permute(0, 3, 1, 2)# .type(torch.float)
 
