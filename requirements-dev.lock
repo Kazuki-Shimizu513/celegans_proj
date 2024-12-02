@@ -280,6 +280,7 @@ safetensors==0.4.5
     # via timm
     # via transformers
 scikit-image==0.24.0
+    # via celegans-proj
     # via imgaug
 scikit-learn==1.5.2
     # via celegans-proj

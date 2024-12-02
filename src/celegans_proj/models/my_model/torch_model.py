@@ -22,6 +22,8 @@ import numpy as np
 from PIL import Image
 import cv2
 import matplotlib.pyplot as plt
+from skimage.filters.rank import entropy
+from skimage.morphology import disk
 
 from tqdm.auto import tqdm
 
@@ -374,14 +376,13 @@ class MyTorchModel(nn.Module):
             Returns:
                 Bach: which contains image, mask, label, pred_image, pred_mask,  prediction_score, anomaly_map,
         """
-       
         imgs = batch['image']
         # imgs = self.cvt_channel_gray2RGB(imgs)
+
         posterior = self.pipe.vae.encode(imgs, return_dict=False)[0]
         latents = posterior.sample(generator=self.generator)
 
         # Reconstruction
-
         if "diffusion" not in self.train_models:
             pred_latents = latents.clone()
             # pred_latents= self.pipe( 
@@ -420,24 +421,27 @@ class MyTorchModel(nn.Module):
                 num_images_per_prompt = 1,  # SAG for each latent
             )
 
+            seg_masks, otsu_thresholds = self.make_ref_seg_msk(batch['image'], check=True) #(B, 256,256)
+
+
             gen_imgs = self.pipe.vae.decode(gen_latents/self.pipe.vae.config.scaling_factor, return_dict=False)[0]
 
         pred_imgs = self.pipe.vae.decode(pred_latents/self.pipe.vae.config.scaling_factor, return_dict=False)[0]
 
 
-        # TODO:: register_outputs in the way of dict , not tuple
+        # register_outputs in the way of dict , not tuple
         output = dict(
             image=batch['image'],
             image_path=batch['image_path'],
             mask=batch['mask'],
             label=batch['label'],
 
-            pred_imgs=pred_imgs,
-
             posterior=posterior,
 
             latents=latents,
             pred_latents=pred_latents,
+
+            pred_imgs=pred_imgs,
         )
 
 
@@ -452,6 +456,7 @@ class MyTorchModel(nn.Module):
                 KL_THRESHOLDS=KL_THRESHOLDS,
                 gen_KL_THRESHOLDS=gen_KL_THRESHOLDS,
 
+                seg_masks=seg_masks,
                 pred_masks=pred_masks,
                 gen_masks=gen_masks,
               )
@@ -468,6 +473,7 @@ class MyTorchModel(nn.Module):
                 KL_THRESHOLDS=KL_THRESHOLDS,
                 gen_KL_THRESHOLDS=gen_KL_THRESHOLDS,
 
+                seg_masks=seg_masks,
                 pred_masks=pred_masks,
                 gen_masks=gen_masks,
               )
@@ -482,10 +488,98 @@ class MyTorchModel(nn.Module):
             output =  {"anomaly_maps": output["anomaly_maps"], "pred_scores": output["pred_scores"]}
         return output
 
+    def make_ref_seg_msk(
+        self,
+        imgs, 
+        check=False, # True,
+    ): #(B, 256,256)
+        # TODO:: make segmentation mask with kl_thresh 
+        #    or something like entropy for reference in generation mask
+        root = Path(self.out_path)
+        seg_masks = []
+        otsu_thresholds = []
+        imgs = imgs.numpy(force=True)
+        imgs = ((imgs - imgs.min()) / (imgs.max() - imgs.min() + 1e-10) * 255.0).astype(np.uint8)
+        for img in imgs:
+            img = np.squeeze(img)
+            if check:
+                img_hist, bin_edges = np.histogram(img, bins=256, range=(0,256))
+                # save_image(image=img_hist, root=root, filename=f"hist.png")
+                plt.plot(img_hist)
+                plt.savefig("hist.png")
+                plt.clf();plt.close();
+            tmp = cv2.GaussianBlur(img, (3,3), 0)
+            entr = entropy(tmp, disk(10)) # TODO:: apply entropy filter
+            entr = ((entr - entr.min()) / (entr.max() - entr.min() + 1e-10) * 255.0).astype(np.uint8)
+            if check:
+                _entr = np.tile(entr[:, :, np.newaxis], (1, 1, 3))#  W, H -> W, H, 1*3,
+                fig = plt.figure()
+                plt.imshow(_entr)
+                save_image(image=fig, root=root, filename=f"entropy.png")
+                plt.clf();plt.close();
+            threshold, mask = cv2.threshold(entr, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+            if check:
+                contours, hierarchy = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                img_with_contours = cv2.drawContours(img, contours,-1,255,3)
+                img_with_contours = np.tile(img_with_contours[:, :, np.newaxis], (1, 1, 3))# W, H -> W, H, 1*3
+                fig = plt.figure()
+                plt.imshow(img_with_contours)
+                save_image(image=fig, root=root, filename=f"contour.png")
+                plt.clf();plt.close();
+            seg_masks.append(torch.tensor(mask,dtype=torch.long))
+            otsu_thresholds.append(torch.tensor(threshold,)) # requires_grad = True
+        seg_masks = torch.stack(seg_masks, dim=0)
+        otsu_thresholds = torch.stack(otsu_thresholds, dim=0)
+        return seg_masks, otsu_thresholds
 
+    #TODO: move to componets
+    @staticmethod
+    def entropy_filer(img, kernel_size=(5,5), bins=255, pixel_range=(0, 255)):
+        """entropy filter
+            Args:
+                W : window or weight matrix (5,5)
+                    which weight is determined by histgram rank of the within patch 
+                p : pixel probability 0-1 torch.float32
+                    which is defined by frac{histgram rank of the within patch}{histgram rank of the whole image}
+                e : entropy = - p * log_2( p )
+            Returns:
+                conv(W,e) = W.permute(1,2) * p
+                # Convolution is equivalent with Unfold + Matrix Multiplication + Fold (or view to output shape)
+                # i.e ) Conv = fold(unfold.matmul(W))
+                # https://pytorch.org/docs/stable/generated/torch.nn.Unfold.html
+        """
+        B, C, H, W = img.shape
+        out_size = (H,W)
+        img_hist = torch.histogram(img, bins=bins, range=pixel_range)
+        print(f"{img_hist.shape=}")
+
+        # get_Weight Matrix
+        w = torch.empty(B, C, *kernel_size)
+        img_unf = F.unfold(img, kernel_size)
+        patch = torch.chunk(img_unf, C, dim=1)## patch is \PI{kernel_size}
+        patch_hist = torch.histogram(patch, bins=bins, range=pixel_range)
+        print(f"{patch_hist.shape=}")
+
+
+        # get_entropy Matrix
+        p = patch_hist / img_hist
+        entropy = - p * p.log() 
+        entropy = torch.empty(1, C, 10, 12) # TODO:
+
+        # i.e ) Conv = fold(unfold.matmul(W))
+        inp_unf = F.unfold(entropy, kernel_size)
+        out_unf = inp_unf.transpose(1, 2).matmul(
+            w.view(w.size(0), -1).t()
+        ).transpose(1, 2)
+        entropy_filered = F.fold(out_unf,out_size, kernel_size)
+
+        assert img.shape != entropy_filtered.shape, \
+        f"{img.shape=}\t{entropy_filtered.shape=}"
+
+        return entropy_filtered
     def store_imgs(self, output,
         latent_kind = ['latents', 'pred_latents', 'noises', 'pred_noises', 'gen_latents',],
-        img_kind = ['image', 'mask', 'pred_imgs',  'gen_imgs', 'pred_masks', 'gen_masks', 'anomaly_maps',],
+        img_kind = ['image', 'mask', 'pred_imgs',  'gen_imgs', 'seg_masks','pred_masks', 'gen_masks', 'anomaly_maps',],
     ):
         root = Path(self.out_path)
         for k, v in output.items():
@@ -553,8 +647,6 @@ class MyTorchModel(nn.Module):
         if do_classifier_free_guidance:
             prompt_embeds = torch.cat([negative_prompt_embeds, prompt_embeds])
 
-
-
         # 2. ADD Noise to latents and Sample Gaussian Noise 
         # 2.1 Sample a random timestep and Nose
         self.pipe.scheduler.set_timesteps(self.ddpm_num_steps, device=device)
@@ -593,12 +685,6 @@ class MyTorchModel(nn.Module):
         original_attn_proc = self.pipe.unet.attn_processors
         self.set_attn_processor(attn_proc_name="CrossAttnStoreProcessor")
 
-        # if self.training:
-        #     self.pipe.set_progress_bar_config(disable=True)
-        # else:
-        #     self.pipe.set_progress_bar_config(disable=False)
-
-
         # 4. Execute Denoising Loop
         net_attn_maps = []
         num_total = noisy_latents.shape[0] # timesteps.sum().item()
@@ -610,49 +696,46 @@ class MyTorchModel(nn.Module):
                 attn_maps = {}
                 # 4. Execute Denoising Loop
 
-                noise_pred, attn_maps,  = self._diffusion_step(
-                    latent,
-                    do_classifier_free_guidance,
-                    timestep,
-                    prompt_embeds,
-                    attn_maps,
-                )
-                # Update attn_maps
-                _attn_maps = attn_maps
-                pred_noises[idx] = noise_pred.squeeze(0).clone()
-                # compute the original sample x_t -> x_0
-                latent = self.pipe.scheduler.step(noise_pred, timestep, latent, **extra_step_kwargs).pred_original_sample
+                # noise_pred, attn_maps,  = self._diffusion_step(
+                #     latent,
+                #     do_classifier_free_guidance,
+                #     timestep,
+                #     prompt_embeds,
+                #     attn_maps,
+                # )
+                # # Update attn_maps
+                # _attn_maps = attn_maps
+                # pred_noises[idx] = noise_pred.squeeze(0).clone()
+                # # compute the original sample x_t -> x_0
+                # latent = self.pipe.scheduler.step(noise_pred, timestep, latent, **extra_step_kwargs).pred_original_sample
+                if self.training:
 
+                    noise_pred, attn_maps,  = self._diffusion_step(
+                        latent,
+                        do_classifier_free_guidance,
+                        timestep,
+                        prompt_embeds,
+                        attn_maps,
+                    )
+                    # Update attn_maps
+                    _attn_maps = attn_maps
+                    pred_noises[idx] = noise_pred.squeeze(0).clone()
+                    # compute the original sample x_t -> x_0
+                    latent = self.pipe.scheduler.step(noise_pred, timestep, latent, **extra_step_kwargs).pred_original_sample
 
-
-#                 if self.training:
-
-#                     noise_pred, attn_maps,  = self._diffusion_step(
-#                         latent,
-#                         do_classifier_free_guidance,
-#                         timestep,
-#                         prompt_embeds,
-#                         attn_maps,
-#                     )
-#                     # Update attn_maps
-#                     _attn_maps = attn_maps
-#                     pred_noises[idx] = noise_pred.squeeze(0).clone()
-#                     # compute the original sample x_t -> x_0
-#                     latent = self.pipe.scheduler.step(noise_pred, timestep, latent, **extra_step_kwargs).pred_original_sample
-
-#                 else:
-#                     for i, t in enumerate(list(reversed(range(timestep)))):
-#                         noise_pred, attn_maps, = self._sag_step(
-#                             i, t, latent, prompt_embeds,
-#                             do_classifier_free_guidance, do_self_attention_guidance, 
-#                             guidance_scale, sag_scale,
-#                             attn_maps,
-#                         )
-#                         # Update attn_maps
-#                         _attn_maps = self.update_attn_maps(_attn_maps, attn_maps, timestep)# , process)
-#                         pred_noises[idx] = pred_noises[idx] + noise_pred.squeeze(0) / timestep
-#                         # compute the previous noisy sample x_t -> x_t-1
-#                         latent = self.pipe.scheduler.step(noise_pred, t, latent, **extra_step_kwargs).prev_sample
+                else:
+                    for i, t in enumerate(list(reversed(range(timestep)))):
+                        noise_pred, attn_maps, = self._sag_step(
+                            i, t, latent, prompt_embeds,
+                            do_classifier_free_guidance, do_self_attention_guidance, 
+                            guidance_scale, sag_scale,
+                            attn_maps,
+                        )
+                        # Update attn_maps
+                        _attn_maps = self.update_attn_maps(_attn_maps, attn_maps, timestep)# , process)
+                        pred_noises[idx] = pred_noises[idx] + noise_pred.squeeze(0) / timestep
+                        # compute the previous noisy sample x_t -> x_t-1
+                        latent = self.pipe.scheduler.step(noise_pred, t, latent, **extra_step_kwargs).prev_sample
 
                 pred_latents[idx] = latent.squeeze(0).clone()
                 net_attn_maps.append(_attn_maps)

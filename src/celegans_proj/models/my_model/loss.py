@@ -58,7 +58,8 @@ class MyLoss(nn.Module):
             Tensor: loss
         """
 
-        loss = self.loss_image_weight * self.compute_recon_loss(outputs['pred_imgs'], outputs['image'], perceptual="ssim")
+        loss = self.loss_image_weight * self.compute_recon_loss(
+            outputs['pred_imgs'], outputs['image'], perceptual="ssim")
 
         loss += self.loss_image_weight * self.compute_recon_loss(
             outputs['anomaly_maps'].squeeze(1),  # (1,1,256,256) -> (1,256,256)
@@ -74,42 +75,70 @@ class MyLoss(nn.Module):
         if "vae" in self.train_models \
             and "diffusion" in self.train_models:
 
-            loss += self.loss_latent_weight * self.compute_recon_loss(outputs['pred_latents'], outputs['latents'])
-            loss += self.loss_noise_weight * self.compute_recon_loss(outputs['pred_noises'], outputs['noises'], )
-            loss += self.loss_gen_weight * self.compute_recon_loss(outputs['gen_imgs'], outputs['image'], )
-            loss += self.loss_gen_weight * self.compute_recon_loss(outputs['gen_latents'], outputs['latents'], )
+            loss += self.loss_latent_weight * self.compute_recon_loss(
+                outputs['pred_latents'], outputs['latents'])
+            loss += self.loss_noise_weight * self.compute_recon_loss(
+                outputs['pred_noises'], outputs['noises'], )
+            loss += self.loss_gen_weight * self.compute_recon_loss(
+                outputs['gen_imgs'], outputs['image'], )
+            loss += self.loss_gen_weight * self.compute_recon_loss(
+                outputs['gen_latents'], outputs['latents'], )
 
-            loss += self.loss_emb_weight * self.compute_embedding_loss(outputs['gen_latents'], outputs['latents'],)
-            loss += self.loss_emb_weight * self.compute_embedding_loss(outputs['pred_latents'], outputs['latents'],)
+            loss += self.loss_emb_weight * self.compute_embedding_loss(
+                outputs['gen_latents'], outputs['latents'],)
+            loss += self.loss_emb_weight * self.compute_embedding_loss(
+                outputs['pred_latents'], outputs['latents'],)
 
-            loss += self.loss_mask_weight * self.compute_recon_loss(outputs['KL_THRESHOLDS'], outputs['gen_KL_THRESHOLDS'], )
-            loss += self.loss_mask_weight * self.compute_segmentation_loss(outputs['pred_masks'], outputs['gen_masks'], )
+            loss += self.loss_mask_weight * self.compute_divergence_loss(
+                outputs['KL_THRESHOLDS'], outputs['gen_KL_THRESHOLDS'], )
+            # loss += self.loss_mask_weight * self.compute_segmentation_loss(
+            #     outputs['pred_masks'], outputs['seg_masks'], )
             # loss += self.loss_mask_weight * self.compute_recon_loss(outputs['pred_masks'], outputs['gen_masks'], )
 
             loss += self.loss_kl_weight * outputs['posterior'].kl().mean()# kl loss
 
         elif "diffusion" in self.train_models:
-            loss += self.loss_latent_weight * self.compute_recon_loss(outputs['pred_latents'], outputs['latents'])
-            loss += self.loss_noise_weight * self.compute_recon_loss(outputs['pred_noises'], outputs['noises'], )
-            loss += self.loss_gen_weight * self.compute_recon_loss(outputs['gen_imgs'], outputs['image'], )
-            loss += self.loss_gen_weight * self.compute_recon_loss(outputs['gen_latents'], outputs['latents'], )
+            loss += self.loss_latent_weight * self.compute_recon_loss(
+                outputs['pred_latents'], outputs['latents'])
+            loss += self.loss_noise_weight * self.compute_recon_loss(
+                outputs['pred_noises'], outputs['noises'], )
+            loss += self.loss_gen_weight * self.compute_recon_loss(
+                outputs['gen_imgs'], outputs['image'], )
+            loss += self.loss_gen_weight * self.compute_recon_loss(
+                outputs['gen_latents'], outputs['latents'], )
 
-            loss += self.loss_emb_weight * self.compute_embedding_loss(outputs['gen_latents'], outputs['latents'],)
-            loss += self.loss_emb_weight * self.compute_embedding_loss(outputs['pred_latents'], outputs['latents'],)
+            loss += self.loss_emb_weight * self.compute_embedding_loss(
+                outputs['gen_latents'], outputs['latents'],)
+            loss += self.loss_emb_weight * self.compute_embedding_loss(
+                outputs['pred_latents'], outputs['latents'],)
 
 
-            loss += self.loss_mask_weight * self.compute_recon_loss(outputs['KL_THRESHOLDS'], outputs['gen_KL_THRESHOLDS'], )
-            loss += self.loss_mask_weight * self.compute_segmentation_loss(outputs['pred_masks'], outputs['gen_masks'], )
+            loss += self.loss_mask_weight * self.compute_divergence_loss(
+                outputs['KL_THRESHOLDS'], outputs['gen_KL_THRESHOLDS'], )
+            # loss += self.loss_mask_weight * self.compute_segmentation_loss(
+                # outputs['pred_masks'], outputs['seg_masks'], )
             # loss += self.loss_mask_weight * self.compute_recon_loss(outputs['pred_masks'], outputs['gen_masks'], )
 
         elif "vae" in self.train_models:
             loss += self.loss_kl_weight * outputs['posterior'].kl().mean()# kl loss
 
-        if torch.isnan(loss):
-            loss = torch.tensor(0.0, dtype=torch.float32,device=outputs['image'].device,requires_grad=True)
-            print(f"nan in loss")
+        # if torch.isnan(loss):
+        #     loss = torch.tensor(0.0, dtype=torch.float32,device=outputs['image'].device,requires_grad=True)
+        #     print(f"nan in loss")
 
         return loss
+
+    @staticmethod
+    def compute_divergence_loss(
+            p,q, 
+    ):
+        p, q = p.view(-1, p.size(-1)),q.view(-1, q.size(-1)), # -> size([1,4])
+        m = (0.5 * (p + q))
+        p, q, m = F.log_softmax(p,dim=1),F.log_softmax(q, dim=1),F.log_softmax(m, dim=1)
+        kl_mp = F.kl_div(m, p, log_target=True,reduction="batchmean",)
+        kl_mq = F.kl_div(m, q, log_target=True,reduction="batchmean",)
+        js_div = 0.5 * (kl_mq + kl_mp)
+        return js_div
 
     @staticmethod
     def compute_embedding_loss(
@@ -495,6 +524,7 @@ if __name__ == "__main__":
     #                  [0, 0, 0,  ..., 0, 0, 0],
     #                  [0, 0, 0,  ..., 0, 0, 0],
     #                  [0, 0, 0,  ..., 0, 0, 0]]], device='cuda:0', dtype=torch.uint8)
+
     cuda_0 = torch.device("cuda:0")
     training = True # False # True # 
     training_mask = True
@@ -549,7 +579,6 @@ if __name__ == "__main__":
         loss_kl_weight = 1.0,
         loss_gen_weight = 1.0,
         loss_mask_weight = 1.0,
-
     ) 
 
     loss = loss_fn(outputs)

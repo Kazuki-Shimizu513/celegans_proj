@@ -159,7 +159,7 @@ def train(
         model = SimSID()
     elif model_name == "MyModel":
         model = MyModel(
-            learning_rate = 1e-6,# 1e-8,
+            learning_rate = 1e-8,
             train_models=["vae", "diffusion", ],
             # train_models=["vae",],
             training = True,
@@ -199,7 +199,7 @@ if __name__ == "__main__":
     logging.basicConfig(filename='./logs/debug.log', filemode='w', level=logging.DEBUG)
 
     # exp_name  = "exp_example"
-    exp_name  = "exp_20241125"
+    exp_name  = "exp_20241130"
 
     out_dir = "/mnt/c/Users/compbio/Desktop/shimizudata/"
     log_dir  = "./logs"
@@ -238,7 +238,7 @@ if __name__ == "__main__":
         task = TaskType.SEGMENTATION, #CLASSIFICATION,#
         worker = 30,
         seed  =  44,
-        debug =  True, 
+        debug =  True, #  False,# 
         debug_data_ratio = 0.08, 
     )
 
