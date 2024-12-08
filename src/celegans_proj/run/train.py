@@ -183,6 +183,7 @@ def train(
             train_models=["vae", "diffusion", ],
             training = True,
             training_mask = True,
+            ddpm_num_steps= 4,
             out_path = str(out_dir),
         )
     else:
@@ -260,8 +261,8 @@ if __name__ == "__main__":
         task = TaskType.SEGMENTATION, #CLASSIFICATION,#
         worker = 30,
         seed  =  44,
-        batch = 2,
-        debug = False,# True, # 
+        batch = 1,
+        debug = True, # False,# 
         debug_data_ratio = 0.08, 
     )
 

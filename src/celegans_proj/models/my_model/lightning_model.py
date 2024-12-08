@@ -27,6 +27,7 @@ class MyModel(AnomalyModule):
         training_mask = False,#True,
         learning_rate = 1e-8,
         train_models=["vae", "diffusion"],
+        ddpm_num_steps= 10,# 1000,# 5,#
 
         # Reproducibility
         seed =44,
@@ -45,6 +46,7 @@ class MyModel(AnomalyModule):
         self.training_mask = training_mask # True,
         self.learning_rate = learning_rate 
         self.train_models= train_models 
+        self.ddpm_num_steps= ddpm_num_steps
 
         # Development
         self.out_path = out_path
@@ -123,7 +125,7 @@ class MyModel(AnomalyModule):
             attention_type = "default",
 
             # DDPM Scheduler
-            ddpm_num_steps= 100,# 1000,# 5,#
+            ddpm_num_steps= self.ddpm_num_steps,
             beta_start = 0.0001, 
             beta_end = 0.02,
             trained_betas = None,
