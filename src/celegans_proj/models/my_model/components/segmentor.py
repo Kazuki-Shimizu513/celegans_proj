@@ -121,22 +121,24 @@ class DiffSeg(nn.Module):
               (-1,64,64)
           )# 256 x 64 x 64
         else:
-          # The rest of merging iterations, reducing the number of masks
-          matched = set()
-          new_attns = []
-          for i,point in enumerate(attns):
-            if i in matched:
-              continue
-            matched.add(i)
-            anchor = point
-            kl_bin = self.KL(anchor,attns) < kl_threshold[iter]# 64 x 64
-            if kl_bin.sum() > 0:
-              matched_idx = th.arange(len(attns), device=self.device)[kl_bin.reshape(-1)]
-              for idx in matched_idx: matched.add(idx)
-              aggregated_attn = attns[kl_bin].mean(0)
-              new_attns.append(aggregated_attn.reshape(1,64,64))
-          new_attns = th.stack(new_attns, dim=0)
-
+            try:
+                # The rest of merging iterations, reducing the number of masks
+                matched = set()
+                new_attns = []
+                for i,point in enumerate(attns):
+                    if i in matched:
+                        continue
+                    matched.add(i)
+                    anchor = point
+                    kl_bin = self.KL(anchor,attns) < kl_threshold[iter]# 64 x 64
+                    if kl_bin.sum() > 0:
+                      matched_idx = th.arange(len(attns), device=self.device)[kl_bin.reshape(-1)]
+                      for idx in matched_idx: matched.add(idx)
+                      aggregated_attn = attns[kl_bin].mean(0)
+                      new_attns.append(aggregated_attn.reshape(1,64,64))
+                new_attns = th.stack(new_attns, dim=0)
+            except:
+                new_attns = attns
         return new_attns
 
     def generate_masks(self, attns, kl_threshold, grid):

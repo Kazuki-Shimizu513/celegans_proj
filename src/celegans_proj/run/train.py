@@ -10,6 +10,7 @@ import logging
 from tqdm import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
+from lightning.pytorch import seed_everything 
 from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.callbacks import (
     ModelCheckpoint,
@@ -32,6 +33,9 @@ import wandb
 from celegans_proj.run.image import (
     WDDD2_AD,
     YouTransform,
+    MyVisualizationCallback,
+    MyVisualizer,
+    VisualizationMode,
 ) 
 
 from celegans_proj.models import (
@@ -44,6 +48,7 @@ logger = logging.getLogger(__name__)
 torch.set_float32_matmul_precision("medium")
 torch._dynamo.config.suppress_errors = True
 torch._dynamo.config.capture_scalar_outputs = True
+
 
 # wandb.login()
 
@@ -60,7 +65,7 @@ def train(
     threshold =  "F1AdaptiveThreshold",
     image_metrics  = ['BinaryF1Score'],
     pixel_metrics = ['AUROC'],
-
+    learning_rate  = 1e-8,
     worker = 30,
     logger = logger, 
     seed  =  44,
@@ -68,11 +73,15 @@ def train(
     debug_data_ratio = 0.01, 
 ):
 
+    seed_everything(seed)
+
     out_dir = Path(out_dir)
     out_dir = out_dir.joinpath(f"{exp_name}")
     out_dir.mkdir(parents=True, exist_ok=True)
     model_dir = out_dir.joinpath("models")
     model_dir.mkdir(parents=True, exist_ok=True)
+    image_dir = out_dir.joinpath("images")
+    image_dir.mkdir(parents=True, exist_ok=True)
 
     checkpoint_callback = ModelCheckpoint(
         monitor="pixel_AUROC", # pixel_metrics[0], 
@@ -81,11 +90,22 @@ def train(
         filename='{epoch}',
         save_top_k= 1,
     )
+    
+    vis_callback = MyVisualizationCallback(
+        visualizers=MyVisualizer(
+            mode = VisualizationMode.FULL, # SIMPLE,
+            task=task,
+            normalize=False
+        ),
+        save=True,
+        root=str(image_dir),
+    )
 
     callbacks = [
         checkpoint_callback,
-        EarlyStopping("pixel_AUROC"),
+        # EarlyStopping("pixel_AUROC"),
         DeviceStatsMonitor(),
+        # vis_callback,
     ]
 
     print("prepareing datamodule")
@@ -113,7 +133,7 @@ def train(
         train_batch_size = batch,
         eval_batch_size = batch,
         num_workers = worker, 
-        task = TaskType.SEGMENTATION,#CLASSIFICATION,#  
+        task = task , # TaskType.SEGMENTATION,#CLASSIFICATION,#  
         val_split_mode = ValSplitMode.FROM_TEST,
         val_split_ratio = 0.01,
         image_size = (resolution,resolution),
@@ -159,11 +179,10 @@ def train(
         model = SimSID()
     elif model_name == "MyModel":
         model = MyModel(
-            learning_rate = 1e-8,
+            learning_rate = learning_rate,
             train_models=["vae", "diffusion", ],
-            # train_models=["vae",],
             training = True,
-            training_mask = False,#True,
+            training_mask = True,
             out_path = str(out_dir),
         )
     else:
@@ -183,7 +202,6 @@ def train(
         max_epochs = -1,
     )
     print(f"{engine.image_metric_names=}\n{engine.pixel_metric_names=}")
-    # engine._setup_anomalib_callbacks(model)
     # print(f"{engine._cache.args["callbacks"]=}")
 
     print("starting Training")
@@ -199,17 +217,21 @@ if __name__ == "__main__":
     logging.basicConfig(filename='./logs/debug.log', filemode='w', level=logging.DEBUG)
 
     # exp_name  = "exp_example"
-    exp_name  = "exp_20241130"
+    exp_name  = "exp_20241208"
 
     out_dir = "/mnt/c/Users/compbio/Desktop/shimizudata/"
     log_dir  = "./logs"
     in_dir = "/mnt/e/WDDD2_AD"
+    dataset_name = "WDDD2_AD"
     model_name = "MyModel"
     target_data = "wildType"
-    threshold =  ManualThreshold(default_value=0.9) # "F1AdaptiveThreshold"
+    threshold =  ManualThreshold(default_value=0.5) # "F1AdaptiveThreshold"
     image_metrics  = ['F1Score']# Useless:['MinMax', 'AnomalyScoreDistribution',]
     pixel_metrics = ['AUROC']# Useless:['MinMax', 'AnomalyScoreDistribution',]# 
 
+    version = "v0" # "latest"# "v0" # 
+    ckpt = f"{out_dir}/{exp_name}/{model_name}/{dataset_name}/{target_data}/{version}/weights/lightning/model.ckpt"
+    ckpt=None
 
     logger = WandbLogger(
         project =f"{exp_name}",
@@ -232,13 +254,14 @@ if __name__ == "__main__":
         pixel_metrics = pixel_metrics,
 
 
-        ckpt = None, 
-        batch = 1,
+        learning_rate  = 1e-1,
+        ckpt = ckpt, 
         resolution =  256,
         task = TaskType.SEGMENTATION, #CLASSIFICATION,#
         worker = 30,
         seed  =  44,
-        debug =  True, #  False,# 
+        batch = 2,
+        debug = False,# True, # 
         debug_data_ratio = 0.08, 
     )
 

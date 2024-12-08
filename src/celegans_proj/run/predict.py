@@ -25,6 +25,8 @@ from anomalib.models import (
 from anomalib.engine import Engine
 from anomalib.data.utils import TestSplitMode,ValSplitMode
 
+from anomalib.metrics import ManualThreshold
+
 import wandb
 
 from celegans_proj.run.image.wddd2 import (
@@ -35,6 +37,7 @@ from celegans_proj.run.train import train
 
 from celegans_proj.models import (
     SimSID,
+    MyModel,
 )
 
 logger = logging.getLogger(__name__)
@@ -42,7 +45,6 @@ logger = logging.getLogger(__name__)
 torch.set_float32_matmul_precision("medium")
 torch._dynamo.config.suppress_errors = True
 
-seed_everything(44)
 
 # wandb.login()
 
@@ -59,8 +61,16 @@ def predict(
     threshold =  "F1AdaptiveThreshold",
     worker = 30,
     logger = logger,
+
+    image_metrics  = ['AUROC'],
+    pixel_metrics = ['AUROC'],
+    seed=44,
+    debug = False, 
+    debug_data_ratio = 0.08, 
+
 ):
 
+    seed_everything(seed)
     out_dir = Path(out_dir)
     out_dir = out_dir.joinpath(f"{exp_name}")
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -88,7 +98,7 @@ def predict(
                     ),
                 ]) 
 
-    if model_name == "SimSID":
+    if model_name == "MyModel":# ""SimSID":
         transforms = v2.Compose([
                         v2.Grayscale(), # Wide resNet has 3 channels
                         v2.PILToTensor(),
@@ -117,11 +127,27 @@ def predict(
         val_split_ratio = 0.01,
         image_size = (resolution,resolution),
         transform = transforms,
-        seed  = 44,
+        seed  = seed,
+        debug = debug, # True, 
+        debug_data_ratio = debug_data_ratio, # 0.01, 
+        add_anomalous=debug,
     )
     datamodule.setup()
 
     print("prepareing model")
+
+    for attribute in ("train_data", "val_data", "test_data"):
+        data_loader = getattr(datamodule,attribute)
+        print(f"total {attribute} iterations: {len(data_loader)}")
+
+    i, batch = next(enumerate(datamodule.test_data))
+    print(batch.keys()) # dict_keys(['image_path', 'label', 'image', 'mask'])
+    print(f"{type(batch['image_path'])=}\t{batch['image_path']=}")
+    print(f"{type(batch['label'])=}\t{batch['label']=}")
+    print(f"{type(batch['image'])=}\t{batch['image'].shape=}")
+    print(f"{type(batch['mask'])=}\t{batch['mask'].shape=}")
+    print()
+
 
     if model_name == "Patchcore":
         model = Patchcore(
@@ -138,13 +164,21 @@ def predict(
             pre_trained = True,
         )
     elif model_name == "SimSID":
-
         model = SimSID()
+    elif model_name == "MyModel":
+        model = MyModel(
+            learning_rate = 1e-8,
+            train_models=["vae", "diffusion", ],
+            training = True,
+            training_mask = False,#True,
+            out_path = str(out_dir),
+        )
+ 
     else:
 
         logger.info("please give model_name Patchcore or ReverseDistillation")
 
-    model = torch.compile(model)
+    # model = torch.compile(model)
 
     print("prepareing Tester")
     engine = Engine(
@@ -153,6 +187,8 @@ def predict(
         task = task,
         default_root_dir= str(out_dir),
         threshold = threshold, 
+        image_metrics=image_metrics,
+        pixel_metrics=pixel_metrics,
     )
 
 
@@ -193,24 +229,22 @@ if __name__ == "__main__":
 
 
     # exp_name = "exp_example"
-    exp_name  = "exp_20241110"
+    exp_name  = "exp_20241206"
 
     out_dir = Path("/mnt/c/Users/compbio/Desktop/shimizudata/")
     # out_dir = Path("/home/skazuki/playground/CaenorhabditisElegans_AnomalyDetection_Dataset/results/")
-
     log_dir  = Path("./logs")
-
     in_dir = Path("/mnt/e/WDDD2_AD")
     # in_dir = Path("/home/skazuki/data/WDDD2_AD")
 
     # model_names = [ "Patchcore",  "ReverseDistillation",]
     # model_names = [ "Patchcore",]
     # model_names = [ "ReverseDistillation",]
-    model_names = [ "SimSID",]
+    model_names = ["MyModel"]
+    threshold =  ManualThreshold(default_value=0.9) # "F1AdaptiveThreshold"
+    image_metrics  = ['F1Score']# Useless:['MinMax', 'AnomalyScoreDistribution',]
+    pixel_metrics = ['AUROC']# Useless:['MinMax', 'AnomalyScoreDistribution',]# 
 
-    # ckpt_path  = out_dir.joinpath(f"exp_example/Patchcore/WDDD2_AD/wildType/v3/weights/lightning/model.ckpt")
-    # ckpt_path  = out_dir.joinpath(f"exp_model/ReverseDistillation/WDDD2_AD/wildType/v0/weights/lightning/model.ckpt")
-    threshold = "F1AdaptiveThreshold"
 
     for kind in pseudo_anomaly_modes :
 
@@ -218,27 +252,32 @@ if __name__ == "__main__":
 
             logger = WandbLogger(
                 project=exp_name,
-                # name = "Patchcore_wildType",
                 name = f"{model_name}_{kind}",
                 log_model = "all",#  True, 
                 save_dir = str(log_dir),
             )
 
-            ckpt_path  = out_dir.joinpath(f"{exp_name}/{model_name}/WDDD2_AD/wildType/v0/weights/lightning/model.ckpt")
+            ckpt_path  = out_dir.joinpath(f"{exp_name}/{model_name}/WDDD2_AD/wildType/latest/weights/lightning/model.ckpt")
 
             predict(
-                exp_name =f"{exp_name}_1",
+                exp_name =f"{exp_name}_predict",
                 out_dir = out_dir,
                 in_dir =  in_dir,
                 model_name = model_name, 
                 target_data = kind, # "wildType",
                 threshold =  threshold, 
                 logger = logger,
+                image_metrics  = image_metrics,
+                pixel_metrics = pixel_metrics,
+
 
                 ckpt = ckpt_path,
-                batch = 512,
-                resolution = 128, # 256,
+                resolution = 256,
                 task = TaskType.SEGMENTATION, #CLASSIFICATION,#
                 worker = 16,
+                seed=44,
+                batch = 1,
+                debug = False, 
+                debug_data_ratio = 0.08, 
             )
 

@@ -10,8 +10,7 @@ from torchmetrics.functional.image import (
 import numpy as np
 from PIL import Image
 
-from .torch_model import MyTorchModel
-# from torch_model import MyTorchModel
+from celegans_proj.models.my_model.torch_model import MyTorchModel
 
 class MyLoss(nn.Module):
     """Loss function """
@@ -61,41 +60,44 @@ class MyLoss(nn.Module):
         loss = self.loss_image_weight * self.compute_recon_loss(
             outputs['pred_imgs'], outputs['image'], perceptual="ssim")
 
-        loss += self.loss_image_weight * self.compute_recon_loss(
-            outputs['anomaly_maps'].squeeze(1),  # (1,1,256,256) -> (1,256,256)
-            outputs['mask'],
-            # torch.zeros(outputs['anomaly_maps'].shape, device=outputs['anomaly_maps'].device),
-         )
-        loss += self.loss_image_weight * self.compute_recon_loss(
-            outputs['pred_scores'], 
-            outputs['label'],
-         )
+        # loss += self.loss_image_weight * self.compute_recon_loss(
+        #     outputs['anomaly_maps'].squeeze(1),  # (1,1,256,256) -> (1,256,256)
+        #     outputs['mask'],
+        #  )
 
+        # loss += self.loss_image_weight * self.compute_recon_loss(
+        #     outputs['pred_scores'], 
+        #     outputs['label'],
+        #  )
 
         if "vae" in self.train_models \
             and "diffusion" in self.train_models:
 
-            loss += self.loss_latent_weight * self.compute_recon_loss(
-                outputs['pred_latents'], outputs['latents'])
+            # loss += self.loss_latent_weight * self.compute_recon_loss(
+            #     outputs['pred_latents'], outputs['latents'])
             loss += self.loss_noise_weight * self.compute_recon_loss(
                 outputs['pred_noises'], outputs['noises'], )
-            loss += self.loss_gen_weight * self.compute_recon_loss(
-                outputs['gen_imgs'], outputs['image'], )
-            loss += self.loss_gen_weight * self.compute_recon_loss(
-                outputs['gen_latents'], outputs['latents'], )
 
-            loss += self.loss_emb_weight * self.compute_embedding_loss(
-                outputs['gen_latents'], outputs['latents'],)
-            loss += self.loss_emb_weight * self.compute_embedding_loss(
-                outputs['pred_latents'], outputs['latents'],)
+#             loss += self.loss_gen_weight * self.compute_recon_loss(
+#                 outputs['gen_imgs'], outputs['image'], )
 
-            loss += self.loss_mask_weight * self.compute_divergence_loss(
-                outputs['KL_THRESHOLDS'], outputs['gen_KL_THRESHOLDS'], )
+            # loss += self.loss_gen_weight * self.compute_recon_loss(
+            #     outputs['gen_latents'], outputs['latents'], )
+
+            # loss += self.loss_emb_weight * self.compute_embedding_loss(
+            #     outputs['gen_latents'], outputs['latents'],)
+            # loss += self.loss_emb_weight * self.compute_embedding_loss(
+            #     outputs['pred_latents'], outputs['latents'],)
+
+            # loss += self.loss_mask_weight * self.compute_divergence_loss(
+            #     outputs['KL_THRESHOLDS'], outputs['gen_KL_THRESHOLDS'], )
+
             # loss += self.loss_mask_weight * self.compute_segmentation_loss(
             #     outputs['pred_masks'], outputs['seg_masks'], )
-            # loss += self.loss_mask_weight * self.compute_recon_loss(outputs['pred_masks'], outputs['gen_masks'], )
+            # loss += self.loss_mask_weight * self.compute_recon_loss(
+            #     outputs['pred_masks'], outputs['gen_masks'], )
 
-            loss += self.loss_kl_weight * outputs['posterior'].kl().mean()# kl loss
+            # loss += self.loss_kl_weight * outputs['posterior'].kl().mean()# kl loss
 
         elif "diffusion" in self.train_models:
             loss += self.loss_latent_weight * self.compute_recon_loss(
@@ -122,9 +124,16 @@ class MyLoss(nn.Module):
         elif "vae" in self.train_models:
             loss += self.loss_kl_weight * outputs['posterior'].kl().mean()# kl loss
 
-        # if torch.isnan(loss):
-        #     loss = torch.tensor(0.0, dtype=torch.float32,device=outputs['image'].device,requires_grad=True)
-        #     print(f"nan in loss")
+        if torch.isnan(loss):
+            loss = torch.tensor(100.0, dtype=torch.float32,device=outputs['image'].device,requires_grad=True)
+            print(f"nan in loss")
+
+        if loss.dtype != torch.float:
+            try:
+                loss = loss.to(torch.float)
+            except:
+                loss = torch.tensor(100.0, dtype=torch.float32,device=outputs['image'].device,requires_grad=True)
+            print(f"{loss.dytpe} in loss")
 
         return loss
 
@@ -167,8 +176,8 @@ class MyLoss(nn.Module):
         assert pred.shape == target.shape,\
             f"{pred.shape=}\t{target.shape=}"
         classes = self.get_segClasses(pred, target)
-        pred = self.fmt_segMask2entropy(pred, num_class = len(classes))
-        target_entro = self.fmt_segMask2entropy(target, num_class = len(classes))
+        pred = self.fmt_segMask2entropy(pred, num_class = classes)
+        target_entro = self.fmt_segMask2entropy(target, num_class = classes)
 
         sup_loss = 0
         sup_ce = self.ce_loss(pred,target)
@@ -193,22 +202,20 @@ class MyLoss(nn.Module):
 
         cls1 = msk1.unique().tolist()
         cls2 = msk2.unique().tolist()
-
-        if len(cls1) >= len(cls2): # max
-            classes = cls1
-        else:
-            classes = cls2
+        classes = max([*cls1, *cls2]) + 1
 
         return classes 
 
     @staticmethod
-    def fmt_segMask2entropy(mask, num_class =5  ):
+    def fmt_segMask2entropy(mask, num_class=5, eps=1e-10):
 
         mask_one_hot = F.one_hot(mask.squeeze(1), num_classes=num_class)
         # Convert from NHWC to NCHW
         mask_one_hot = mask_one_hot.permute(0, 3, 1, 2).type(torch.float)
 
         probabilities = nn.Softmax(dim=1)(mask_one_hot)
+        probabilities -= eps # 1e-10
+
         return probabilities 
 
     @staticmethod
@@ -227,8 +234,8 @@ class MyLoss(nn.Module):
 
         if pred.min() < 0.0 or target.min() < 0.0\
             or pred.max() > 1.0 or target.max() > 1.0:
-            pred  = MyLoss.min_max_scaling(pred)
-            target  = MyLoss.min_max_scaling(target)
+            pred = MyLoss.min_max_scaling(pred)
+            target = MyLoss.min_max_scaling(target)
 
 
         loss = F.mse_loss(pred, target)
@@ -251,8 +258,8 @@ class MyLoss(nn.Module):
         return x.repeat(1, 3, 1, 1)
 
     @staticmethod
-    def min_max_scaling(x, eps=1e-10):
-        new_x = (x-x.min())/ (x.max() - x.min() + eps)
+    def min_max_scaling(x, eps=torch.finfo(torch.float32).eps):
+        new_x = (x - x.min())/ (x.max() - x.min() + eps)
         return new_x
 
 
@@ -529,7 +536,7 @@ if __name__ == "__main__":
     training = True # False # True # 
     training_mask = True
 
-    B = 1
+    B = 2
     C,W,H = (1,256,256)
 
     img_path = "/mnt/d/WDDD2/TIF_GRAY/wt_N2_081113_01/wt_N2_081113_01_T60_Z49.tiff"
@@ -549,13 +556,14 @@ if __name__ == "__main__":
     img = transforms(img)
     img = img.to(device=cuda_0)
     img = img.unsqueeze(0)
+    img = img.repeat(B, 1, 1, 1)# .permute(1, 2, 0) # C*3, W, H -> W, H, C*3,
     print(f"{img.shape=}")
     msk = torch.zeros(B,W,H,).to(device=cuda_0)
-    lbl = torch.tensor([np.int64(0)]).to(device=cuda_0)
+    lbl = torch.tensor([np.int64(0)]* B).to(device=cuda_0)
 
 
     batch = dict(
-        image_path=[img_path],
+        image_path=[img_path]* B,
         image=img,
         mask=msk,
         label=lbl,

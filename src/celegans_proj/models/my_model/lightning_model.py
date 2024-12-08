@@ -123,7 +123,7 @@ class MyModel(AnomalyModule):
             attention_type = "default",
 
             # DDPM Scheduler
-            ddpm_num_steps=5,# 10,# 1000,
+            ddpm_num_steps= 100,# 1000,# 5,#
             beta_start = 0.0001, 
             beta_end = 0.02,
             trained_betas = None,

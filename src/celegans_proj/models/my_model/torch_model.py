@@ -16,6 +16,11 @@ import torch.nn.functional as F
 
 import torchvision
 from torchvision.transforms import v2
+from torchvision.utils import (
+    draw_segmentation_masks,
+    save_image as tv_save_image,
+)
+
 
 import numpy as np
 
@@ -50,23 +55,16 @@ from transformers import (
 )
 from anomalib.data.utils.image import save_image# , show_image
 
-# from components import (
-#     CrossAttnStoreProcessor,
-#     gaussian_blur_2d,
-#     min_max_scaling,
-#     DiffSeg, 
-# )
-# from anomaly_map import AnomalyMapGenerator
-# from segmentor_param_net import MyDiffSegParamNet
+from celegans_proj.utils.file_import import  WDDD2FileNameUtil
 
-from .components import (
+from celegans_proj.models.my_model.components import (
     CrossAttnStoreProcessor,
     gaussian_blur_2d,
     min_max_scaling,
     DiffSeg, 
 )
-from .anomaly_map import AnomalyMapGenerator
-from .segmentor_param_net import MyDiffSegParamNet
+from celegans_proj.models.my_model.anomaly_map import AnomalyMapGenerator
+from celegans_proj.models.my_model.segmentor_param_net import MyDiffSegParamNet
 
 torch.autograd.set_detect_anomaly(True)
 
@@ -376,6 +374,7 @@ class MyTorchModel(nn.Module):
             Returns:
                 Bach: which contains image, mask, label, pred_image, pred_mask,  prediction_score, anomaly_map,
         """
+        path = batch['image_path']
         imgs = batch['image']
         # imgs = self.cvt_channel_gray2RGB(imgs)
 
@@ -412,16 +411,16 @@ class MyTorchModel(nn.Module):
                 pred_noises, noises, 
                 pred_latents, noisy_latents, 
                 pred_masks, KL_THRESHOLDS,
-                gen_latents, gen_masks,  gen_KL_THRESHOLDS,
+                gen_latents, gen_masks,  gen_KL_THRESHOLDS
             ) = self.diffusion_step(
                 latents, 
-                prompt, 
+                prompt, path,
                 guidance_scale = guidance_scale, #  7.5,
                 sag_scale = sag_scale,#  0.75,
                 num_images_per_prompt = 1,  # SAG for each latent
             )
 
-            seg_masks, otsu_thresholds = self.make_ref_seg_msk(batch['image'], check=True) #(B, 256,256)
+            seg_masks, otsu_thresholds = self.make_ref_seg_msk(batch['image'], check=False,) # True, ) #(B, 256,256)
 
 
             gen_imgs = self.pipe.vae.decode(gen_latents/self.pipe.vae.config.scaling_factor, return_dict=False)[0]
@@ -483,7 +482,8 @@ class MyTorchModel(nn.Module):
             anomaly_maps = anomaly_maps,
             pred_scores = pred_scores
         )
-        # self.store_imgs(output) # TODO:: move to _Visualizer CallBack
+        if not self.training:
+            self.store_outputs(output, store=True) #False)# # TODO:: move to _Visualizer CallBack
         if not self.training: # # inference phase
             output =  {"anomaly_maps": output["anomaly_maps"], "pred_scores": output["pred_scores"]}
         return output
@@ -506,10 +506,10 @@ class MyTorchModel(nn.Module):
                 img_hist, bin_edges = np.histogram(img, bins=256, range=(0,256))
                 # save_image(image=img_hist, root=root, filename=f"hist.png")
                 plt.plot(img_hist)
-                plt.savefig("hist.png")
+                plt.savefig(self.out_path + "/hist.png")
                 plt.clf();plt.close();
-            tmp = cv2.GaussianBlur(img, (3,3), 0)
-            entr = entropy(tmp, disk(10)) # TODO:: apply entropy filter
+
+            entr = entropy(img, disk(3)) # apply entropy filter
             entr = ((entr - entr.min()) / (entr.max() - entr.min() + 1e-10) * 255.0).astype(np.uint8)
             if check:
                 _entr = np.tile(entr[:, :, np.newaxis], (1, 1, 3))#  W, H -> W, H, 1*3,
@@ -517,87 +517,67 @@ class MyTorchModel(nn.Module):
                 plt.imshow(_entr)
                 save_image(image=fig, root=root, filename=f"entropy.png")
                 plt.clf();plt.close();
-            threshold, mask = cv2.threshold(entr, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+            threshold, mask = cv2.threshold(entr, 0, 1, cv2.THRESH_OTSU)
             if check:
-                contours, hierarchy = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                _mask = (mask * 255.0).astype(np.uint8)
+                contours, hierarchy = cv2.findContours(_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
                 img_with_contours = cv2.drawContours(img, contours,-1,255,3)
                 img_with_contours = np.tile(img_with_contours[:, :, np.newaxis], (1, 1, 3))# W, H -> W, H, 1*3
                 fig = plt.figure()
                 plt.imshow(img_with_contours)
                 save_image(image=fig, root=root, filename=f"contour.png")
                 plt.clf();plt.close();
-            seg_masks.append(torch.tensor(mask,dtype=torch.long))
-            otsu_thresholds.append(torch.tensor(threshold,)) # requires_grad = True
+            seg_masks.append(torch.tensor(mask, dtype=torch.long, device=self.device))
+            otsu_thresholds.append(torch.tensor(threshold, device=self.device)) # requires_grad = True
         seg_masks = torch.stack(seg_masks, dim=0)
         otsu_thresholds = torch.stack(otsu_thresholds, dim=0)
         return seg_masks, otsu_thresholds
 
-    #TODO: move to componets
-    @staticmethod
-    def entropy_filer(img, kernel_size=(5,5), bins=255, pixel_range=(0, 255)):
-        """entropy filter
-            Args:
-                W : window or weight matrix (5,5)
-                    which weight is determined by histgram rank of the within patch 
-                p : pixel probability 0-1 torch.float32
-                    which is defined by frac{histgram rank of the within patch}{histgram rank of the whole image}
-                e : entropy = - p * log_2( p )
-            Returns:
-                conv(W,e) = W.permute(1,2) * p
-                # Convolution is equivalent with Unfold + Matrix Multiplication + Fold (or view to output shape)
-                # i.e ) Conv = fold(unfold.matmul(W))
-                # https://pytorch.org/docs/stable/generated/torch.nn.Unfold.html
-        """
-        B, C, H, W = img.shape
-        out_size = (H,W)
-        img_hist = torch.histogram(img, bins=bins, range=pixel_range)
-        print(f"{img_hist.shape=}")
-
-        # get_Weight Matrix
-        w = torch.empty(B, C, *kernel_size)
-        img_unf = F.unfold(img, kernel_size)
-        patch = torch.chunk(img_unf, C, dim=1)## patch is \PI{kernel_size}
-        patch_hist = torch.histogram(patch, bins=bins, range=pixel_range)
-        print(f"{patch_hist.shape=}")
-
-
-        # get_entropy Matrix
-        p = patch_hist / img_hist
-        entropy = - p * p.log() 
-        entropy = torch.empty(1, C, 10, 12) # TODO:
-
-        # i.e ) Conv = fold(unfold.matmul(W))
-        inp_unf = F.unfold(entropy, kernel_size)
-        out_unf = inp_unf.transpose(1, 2).matmul(
-            w.view(w.size(0), -1).t()
-        ).transpose(1, 2)
-        entropy_filered = F.fold(out_unf,out_size, kernel_size)
-
-        assert img.shape != entropy_filtered.shape, \
-        f"{img.shape=}\t{entropy_filtered.shape=}"
-
-        return entropy_filtered
-    def store_imgs(self, output,
+    def store_outputs(
+        self, 
+        outputs,
         latent_kind = ['latents', 'pred_latents', 'noises', 'pred_noises', 'gen_latents',],
-        img_kind = ['image', 'mask', 'pred_imgs',  'gen_imgs', 'seg_masks','pred_masks', 'gen_masks', 'anomaly_maps',],
+        img_kind = ['image','pred_imgs',  'gen_imgs', 'anomaly_maps',],
+        msk_kind = ['mask', 'seg_masks','pred_masks', 'gen_masks',],
+        store=False,
     ):
-        root = Path(self.out_path)
-        for k, v in output.items():
-            if k in img_kind:
-                # print(f"{k}\n\t{v.shape=}\n")
-                if v.ndim == 4:
-                    v=v.squeeze(0)
-                if v.max() <= 1.0:
-                    v=min_max_scaling(v) * 255.0
-                v = v.repeat(3, 1, 1).permute(1, 2, 0) # C*3, W, H -> W, H, C*3,
-                # print(f"{k}\n\t{v.shape=}\n")
-                # save_image(image=np.array(v.numpy(force=True),np.uint8), root=root, filename=f"{k}.tif")
-                save_image(image=np.array(v.numpy(force=True),np.uint8), root=root, filename=f"{k}.png")
+        out_path = Path(self.out_path)
+        p = out_path.joinpath(f'outputs')
+        for k, v in outputs.items():
+            if k not in [*img_kind, *msk_kind]:# *latent_kind, ]:
+                continue
+            p = out_path.joinpath(f'{k}')
+            p.mkdir(parents=True, exist_ok=True,)
+            for idx, pa in enumerate(outputs['image_path']):
+                [base_dir, filename, suffix] = WDDD2FileNameUtil.strip_path(pa)
+                # print(f"{k}\n\t{filename=}\n\t{v.shape=}\n")
+                _v = v[idx]
+                # print(f"\t{_v.shape=}\n")
+                if k in img_kind:
+                    if _v.ndim == 4:
+                        _v=_v.squeeze(0)
+                    if _v.max() <= 1.0:
+                        _v=min_max_scaling(_v) * 255.0
+                    _v = _v.repeat(3, 1, 1).permute(1, 2, 0) # C*3, W, H -> W, H, C*3,
+                    # print(f"\t{_v.shape=}\n")
+                    if store:
+                        save_image(image=np.array(_v.numpy(force=True),np.uint8), root=p, filename=f"{filename}.png")
+                if k in msk_kind:
+                    img = outputs['image'][idx].repeat(3, 1, 1) * 255.0
+                    if _v.dtype != torch.long:
+                        _v = _v.to(torch.long)
+                    one_hot = F.one_hot(_v)# [W,H] -> [Class,W,H] 
+                    # v = torch.argmax(one_hot, dim=1) # [W,H] <- [Class,W,H]
+                    one_hot = one_hot.permute(2, 0, 1).to(torch.bool)
+                    seg_mask = draw_segmentation_masks(img, masks=one_hot, alpha=0.6)
+                    if store:
+                        tv_save_image(seg_mask, str(p.joinpath(f"{filename}.png")))
 
     def diffusion_step(
         self,
         latents, 
         prompt,
+        path,
         guidance_scale = 2.0,
         sag_scale = 1.0,
         eta=0.0,
@@ -749,7 +729,7 @@ class MyTorchModel(nn.Module):
         # parts segmentation
         KL_THRESHOLDS = self.DiffSegParamModel(latents)  
         if self.training_mask:
-            pred_masks = self.segment_with_attn_maps(net_attn_maps,KL_THRESHOLDS)
+            pred_masks = self.segment_with_attn_maps(net_attn_maps,KL_THRESHOLDS,path, store=True)
         else:
             pred_masks = torch.randint(5,(latents.shape[0],256,256), device=KL_THRESHOLDS.device)
         del net_attn_maps
@@ -792,7 +772,7 @@ class MyTorchModel(nn.Module):
         # parts segmentation
         gen_KL_THRESHOLDS = self.DiffSegParamModel(gen_latents)  
         if self.training_mask:
-            gen_masks = self.segment_with_attn_maps(gen_attn_maps,gen_KL_THRESHOLDS)
+            gen_masks = self.segment_with_attn_maps(gen_attn_maps,gen_KL_THRESHOLDS,path)
         else:
             gen_masks = torch.randint(5,(latents.shape[0],256,256), device=KL_THRESHOLDS.device)
         del gen_attn_maps
@@ -1034,15 +1014,20 @@ class MyTorchModel(nn.Module):
 
 
  
-    def segment_with_attn_maps(self,net_attn_maps,KL_THRESHOLDS):
+    def segment_with_attn_maps(self,net_attn_maps,KL_THRESHOLDS, path, store=False):
 
         pred_masks = []
-        for attn_maps, KL_THRESHOLD in zip(net_attn_maps, KL_THRESHOLDS):
+        for attn_maps, KL_THRESHOLD, p in zip(net_attn_maps, KL_THRESHOLDS, path):
             # KL_THRESHOLD = torch.tensor([0.003]*4) 
             self.segmentor.set_KL_THRESHOLD(KL_THRESHOLD.flatten())
            
             weights_dict = self.split_attn_maps(attn_maps,detach=False,)
-            # self.store_attn_map(weights_dict)# weight_size depends on VAE layer num
+
+            if not self.training:
+                if store:
+                    [base_dir, filename, suffix] = WDDD2FileNameUtil.strip_path(p)
+                    self.store_attn_map(weights_dict, out_name_without_pt=filename)# weight_size depends on VAE layer num
+
             weights_list = [
                 weights_dict["weight_64"],
                 weights_dict["weight_32"],
@@ -1058,8 +1043,11 @@ class MyTorchModel(nn.Module):
         pred_masks = torch.stack(pred_masks, dim=0)
         return pred_masks
 
-    def store_attn_map(self,weights_dict, out_name_without_pt="attention_maps"):
-        torch.save(weights_dict,self.out_path + f'/{out_name_without_pt}.pt')
+    def store_attn_map(self,weights_dict, out_name_without_pt="img_name"):
+        out_path = Path(self.out_path)
+        p = out_path.joinpath(f'attention_maps')
+        p.mkdir(parents=True, exist_ok=True,)
+        torch.save(weights_dict,str(p.joinpath(f'{out_name_without_pt}.pt')))
 
     def split_attn_maps(self, attn_maps,
         detach=True, instance_or_negative=False,batch_size=2,
@@ -1116,10 +1104,10 @@ if __name__ == "__main__":
 
     out_path = '/mnt/c/Users/compbio/Desktop/shimizudata/test'
     cuda_0 = torch.device("cuda:0")
-    training = True #False # True # 
-    training_mask = False # True # 
+    training = False #True #
+    training_mask = True # False # 
 
-    B = 1
+    B = 2
     C,W,H = (1,256,256)
 
     img_path = "/mnt/d/WDDD2/TIF_GRAY/wt_N2_081113_01/wt_N2_081113_01_T60_Z49.tiff"
@@ -1139,13 +1127,15 @@ if __name__ == "__main__":
     img = transforms(img)
     img = img.to(device=cuda_0)
     img = img.unsqueeze(0)
+    img = img.repeat(B, 1, 1, 1)# .permute(1, 2, 0) # C*3, W, H -> W, H, C*3,
+    print(f"{img.shape=}")
 
     msk = torch.zeros(B,W,H,).to(device=cuda_0)
-    lbl = torch.tensor([np.int64(0)]).to(device=cuda_0)
+    lbl = torch.tensor([np.int64(0)]* B).to(device=cuda_0)
 
 
     batch = dict(
-        image_path=[img_path],
+        image_path=[img_path]* B,
         image=img,
         mask=msk,
         label=lbl,
