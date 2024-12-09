@@ -559,7 +559,7 @@ if __name__ == "__main__":
     training = True # False # True # 
     training_mask = True
 
-    B = 2
+    B = 1
     C,W,H = (1,256,256)
 
     img_path = "/mnt/d/WDDD2/TIF_GRAY/wt_N2_081113_01/wt_N2_081113_01_T60_Z49.tiff"

@@ -463,6 +463,13 @@ class MyTorchModel(nn.Module):
             anomaly_maps = anomaly_maps,
             pred_scores = pred_scores
         )
+
+
+        if self.training:
+            for name, param in self.pipe.unet.state_dict().items():
+                param = F.normalize(param, dim=0,)
+                self.pipe.unet.state_dict()[name] = param
+
         if not self.training:
             self.store_outputs(output, store=True) #False)# # TODO:: move to MyVisualizer CallBack
         if not self.training: # # inference phase
