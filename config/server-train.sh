@@ -1,13 +1,14 @@
 #!/bin/bash
 
 python ./src/celegans_proj/run/run.py \
-  --exp_name exp_20241129 \
-  --in_dir /mnt/e/WDDD2_AD \
-  --out_dir  /mnt/c/Users/compbio/Desktop/shimizudata/ \
+  --exp_name exp_20241209 \
+  --in_dir /home/skazuki/data/WDDD2_AD \
+  --out_dir  /home/skazuki/skazuki/result \
   --batch 1 \
   --resolution 256 \
   --model_names \
-          "MyModel"\
+      "Patchcore"\
+      "ReverseDistillation" \
   --pseudo_anomaly_modes  \
               "wildType" \
               "patchBlack" \

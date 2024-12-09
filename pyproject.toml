@@ -9,7 +9,6 @@ dependencies = [
     "tqdm>=4.66.5",
     "wandb>=0.18.5",
     "anomalib>=1.0.0",
-    "torch>=2.5.1",
     "torchvision>=0.20.1",
     "torchaudio>=2.5.1",
     "lightning>=2.4.0",
@@ -33,6 +32,7 @@ dependencies = [
     "diffusers>=0.31.0",
     "transformers>=4.46.2",
     "scikit-image>=0.24.0",
+    "torch>=2.5.1",
 ]
 readme = "README.md"
 requires-python = ">= 3.10"
