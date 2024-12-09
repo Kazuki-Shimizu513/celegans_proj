@@ -53,7 +53,6 @@ from transformers import (
     # CLIPConfig,
     # CLIPModel,
 )
-from anomalib.data.utils.image import save_image# , show_image
 
 from celegans_proj.utils.file_import import  WDDD2FileNameUtil
 
@@ -466,7 +465,15 @@ class MyTorchModel(nn.Module):
 
 
         if self.training:
+
+            skip_name = ["image_path", "label", "posterior", ]
+            for name, x in output.items():
+                if name in skip_name:
+                    continue
+                output[name] = torch.nan_to_num(x, nan=0.0, posinf=1.0, neginf=-1.0)
+
             for name, param in self.pipe.unet.state_dict().items():
+                param = torch.nan_to_num(param, nan=0.0, posinf=1.0, neginf=-1.0)
                 param = F.normalize(param, dim=0,)
                 self.pipe.unet.state_dict()[name] = param
 
@@ -492,7 +499,6 @@ class MyTorchModel(nn.Module):
             img = np.squeeze(img)
             if check:
                 img_hist, bin_edges = np.histogram(img, bins=256, range=(0,256))
-                # save_image(image=img_hist, root=root, filename=f"hist.png")
                 plt.plot(img_hist)
                 plt.savefig(self.out_path + "/hist.png")
                 plt.clf();plt.close();
@@ -503,7 +509,7 @@ class MyTorchModel(nn.Module):
                 _entr = np.tile(entr[:, :, np.newaxis], (1, 1, 3))#  W, H -> W, H, 1*3,
                 fig = plt.figure()
                 plt.imshow(_entr)
-                save_image(image=fig, root=root, filename=f"entropy.png")
+                self.save_image(image=fig, root=root, filename=f"entropy.png")
                 plt.clf();plt.close();
             threshold, mask = cv2.threshold(entr, 0, 1, cv2.THRESH_OTSU)
             if check:
@@ -513,7 +519,7 @@ class MyTorchModel(nn.Module):
                 img_with_contours = np.tile(img_with_contours[:, :, np.newaxis], (1, 1, 3))# W, H -> W, H, 1*3
                 fig = plt.figure()
                 plt.imshow(img_with_contours)
-                save_image(image=fig, root=root, filename=f"contour.png")
+                self.save_image(image=fig, root=root, filename=f"contour.png")
                 plt.clf();plt.close();
             seg_masks.append(torch.tensor(mask, dtype=torch.long, device=self.device))
             otsu_thresholds.append(torch.tensor(threshold, device=self.device)) # requires_grad = True
@@ -1115,7 +1121,7 @@ class MyTorchModel(nn.Module):
                         _v = _v.permute(1, 2, 0) # C, W, H -> W, H, C,
                     # print(f"\t{_v.shape=}\n")
                     if store:
-                        save_image(image=np.array(_v.numpy(force=True),np.uint8), root=p, filename=f"{filename}.png")
+                        self.save_image(image=np.array(_v.numpy(force=True),np.uint8), root=p, filename=f"{filename}.png")
                 if k in msk_kind:
                     # continue
                     img = outputs['image'][idx].repeat(3, 1, 1)#  * 255.0
@@ -1147,6 +1153,52 @@ class MyTorchModel(nn.Module):
         p = out_path.joinpath(f'attention_maps')
         p.mkdir(parents=True, exist_ok=True,)
         torch.save(weights_dict,str(p.joinpath(f'{out_name_without_pt}.pt')))
+
+    def save_image(self,filename: Path | str, image: np.ndarray | Figure, root: Path | None = None) -> None:
+        """Save an image to the file system.
+
+        Args:
+            filename (Path | str): Path or filename to which the image will be saved.
+            image (np.ndarray | Figure): Image that will be saved to the file system.
+            root (Path, optional): Root directory to save the image. If provided, the top level directory of an absolute
+                filename will be overwritten. Defaults to None.
+        """
+        if isinstance(image, Figure):
+            image = self.figure_to_array(image)
+
+        file_path = Path(filename)
+        # if file_path is absolute, then root is ignored
+        # so we remove the top level directory from the path
+        if file_path.is_absolute() and root:
+            file_path = Path(*file_path.parts[2:])  # OS-AGNOSTIC
+        if root:
+            file_path = root / file_path
+
+        # Make unique file_path if file already exists
+        # file_path = duplicate_filename(file_path)
+
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+        cv2.imwrite(str(file_path), image)
+
+
+    def figure_to_array(self,fig: Figure) -> np.ndarray:
+        """Convert a matplotlib figure to a numpy array.
+
+        Args:
+            fig (Figure): Matplotlib figure.
+
+        Returns:
+            np.ndarray: Numpy array containing the image.
+        """
+        fig.canvas.draw()
+        # convert figure to np.ndarray for saving via visualizer
+        img = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
+        return img.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+
+
+
+
 
 if __name__ == "__main__":
     # __debug__ = True # when you execute without any option 

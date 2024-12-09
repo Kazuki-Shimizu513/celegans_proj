@@ -273,7 +273,7 @@ if __name__ == "__main__":
         pixel_metrics = pixel_metrics,
 
 
-        learning_rate  = 1e-1,
+        learning_rate  = 1e-10,
         ckpt = ckpt, 
         resolution =  256,
         task = TaskType.SEGMENTATION, #CLASSIFICATION,#
