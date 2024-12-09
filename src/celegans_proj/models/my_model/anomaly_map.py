@@ -34,7 +34,6 @@ class AnomalyMapGenerator(nn.Module):
                         mode = "L2", 
                       )
 
-        # TODO :: Cosine Distance using wildtype feature and test feature cropped by pred_mask
         seg_dist = self.compute_segmentation_distance(
                         outputs["pred_masks"], 
                         outputs["pred_latents"], outputs["gen_latents"], 
@@ -90,13 +89,16 @@ class AnomalyMapGenerator(nn.Module):
                 onehot_target.append(_target)
             onehot_target = torch.stack(onehot_target, dim=0)
             # print(f"{onehot_pred.shape=}\t{onehot_target.shape=}") # Class, latentChannel, H, W
-
+            # TODO :: visualize one_hot variables
+            
             # cosine similarity
+            Class, LatentChannel, H, W = onehot_target.shape
             diff = F.cosine_similarity(
-                torch.mean(onehot_pred, 1, keepdim=True,),
-                torch.mean(onehot_target, 1, keepdim=True,),
+                onehot_pred.reshape((-1,H, W)),
+                onehot_target.reshape((-1,H, W)),
                 dim=0, eps=eps,
             ) 
+            diff = diff.reshape((1,H,W))
 
             # print(f"{diff.shape=}")
             diffs.append(diff)

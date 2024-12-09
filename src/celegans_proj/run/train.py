@@ -103,7 +103,7 @@ def train(
 
     callbacks = [
         checkpoint_callback,
-        EarlyStopping("pixel_AUROC"),
+        # EarlyStopping("pixel_AUROC"),
         DeviceStatsMonitor(),
         # vis_callback,
     ]
@@ -273,7 +273,7 @@ if __name__ == "__main__":
         pixel_metrics = pixel_metrics,
 
 
-        learning_rate  = 1e-10,
+        learning_rate  = 1e-1,
         ckpt = ckpt, 
         resolution =  256,
         task = TaskType.SEGMENTATION, #CLASSIFICATION,#
