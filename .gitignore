@@ -1,4 +1,10 @@
 
+
+.python-version
+requirements-dev.lock
+requirements.lock
+
+
 third_party
 results
 logs

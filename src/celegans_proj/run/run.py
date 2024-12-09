@@ -123,7 +123,7 @@ def run():
             task = TaskType.SEGMENTATION, #CLASSIFICATION,#
             worker = 14,
             logger  = logger, 
-            metric_name = "pixel_AUROC",
+            # metric_name = "pixel_AUROC",
         )
         for target_data in tqdm(args.pseudo_anomaly_modes):
 
@@ -137,9 +137,9 @@ def run():
 
 
             print(f"predict {target_data}")
-            ckpt_file = out_dir.joinpath(f"{args.exp_name}/{model_name}/WDDD2_AD/wildType/v0/weights/lightning/model.ckpt")
+            ckpt_file = out_dir.joinpath(f"{args.exp_name}/{model_name}/WDDD2_AD/wildType/latest/weights/lightning/model.ckpt")
             predict(
-                exp_name = f"{args.exp_name}_1",
+                exp_name = f"{args.exp_name}_predict",
                 out_dir = args.out_dir, 
                 in_dir = args.in_dir,
                 target_data = target_data,
@@ -151,6 +151,7 @@ def run():
                 worker = 14,
                 logger  = logger, 
             )
+
 
 #             for target_data in tqdm(args.anomaly_gene_list):
 

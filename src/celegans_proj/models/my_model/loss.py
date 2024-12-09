@@ -64,11 +64,28 @@ class MyLoss(nn.Module):
 #         print(f"{outputs['gen_masks'].shape=}{outputs['pred_masks'].shape=}\t{outputs['seg_masks'].shape=}")
 #         print(f"{outputs['pred_scores'].shape=}\t{outputs['label'].shape=}")
 
+        for title in ("pred_imgs", "image", "gen_imgs",):
+            x = outputs[title]
+            x = MyLoss.min_max_scaling(x , feature_range=(0,1), eps=1e-100,)
+            outputs[title] = x
+
+        for title in ("pred_latents", "latents", "gen_latents",):
+            x = outputs[title]
+            x = MyLoss.min_max_scaling(x , feature_range=(-1,1), eps=1e-100,)
+            outputs[title] = x
+
+        for title in ("pred_noises", "noises",):
+            x = outputs[title]
+            x = MyLoss.min_max_scaling(x , feature_range=(0,1), eps=1e-100,)
+            outputs[title] = x
+
+
+
         loss = self.loss_image_weight * self.compute_recon_loss(
             outputs['pred_imgs'], outputs['image'], perceptual="ssim")
 
-        mask_entropy = self.fmt_segMask2entropy(outputs['mask'].to(torch.long), # (1,256,256) -> (1,1,256,256)
-                            num_class = len(outputs['mask'].unique().tolist()))# +1,)
+        # mask_entropy = self.fmt_segMask2entropy(outputs['mask'].to(torch.long), # (1,256,256) -> (1,1,256,256)
+                            # num_class = len(outputs['mask'].unique().tolist()))# +1,)
         # print(f"{outputs['anomaly_maps'].shape=}\t{outputs['mask'].shape=}{mask_entropy.shape=}")
         # loss += self.loss_image_weight * self.compute_recon_loss(
         #     outputs['anomaly_maps'],   
@@ -91,8 +108,8 @@ class MyLoss(nn.Module):
             # loss += self.loss_gen_weight * self.compute_recon_loss( # CUDA IndexError
             #     outputs['gen_imgs'], outputs['image'], )
 
-            loss += self.loss_gen_weight * self.compute_recon_loss(
-                outputs['gen_latents'], outputs['latents'], )
+            # loss += self.loss_gen_weight * self.compute_recon_loss(
+            #     outputs['gen_latents'], outputs['latents'], )
 
             # loss += self.loss_emb_weight * self.compute_embedding_loss(
             #     outputs['gen_latents'], outputs['latents'],)
@@ -242,12 +259,6 @@ class MyLoss(nn.Module):
         if target.dtype == torch.int64:
             target = target.to(torch.float)
 
-        if pred.min() < 0.0 or target.min() < 0.0\
-            or pred.max() > 1.0 or target.max() > 1.0:
-            pred = MyLoss.min_max_scaling(pred)
-            target = MyLoss.min_max_scaling(target)
-
-
         loss = F.mse_loss(pred, target)
 
         if perceptual=="ssim":
@@ -258,7 +269,8 @@ class MyLoss(nn.Module):
                 target = MyLoss.cvt_channel_gray2RGB(target)
 
             loss += 1 - lpips(pred, target, 
-                              net_type='squeeze', normalize=True,
+                              net_type='squeeze', 
+                              normalize=True,
                               )
 
         return loss
@@ -268,8 +280,9 @@ class MyLoss(nn.Module):
         return x.repeat(1, 3, 1, 1)
 
     @staticmethod
-    def min_max_scaling(x, eps=torch.finfo(torch.float32).eps):
-        new_x = (x - x.min())/ (x.max() - x.min() + eps)
+    def min_max_scaling(x, feature_range=(0,1), eps=1e-100,):#torch.finfo(torch.float32).eps
+        x_std = (x - x.min())/ (x.max() - x.min() + eps)
+        new_x = x_std * (feature_range[0] - feature_range[1]) + feature_range[0]
         return new_x
 
 

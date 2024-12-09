@@ -63,7 +63,7 @@ def train(
     resolution = 256,
     task = TaskType.SEGMENTATION, #CLASSIFICATION,#
     threshold =  "F1AdaptiveThreshold",
-    image_metrics  = ['BinaryF1Score'],
+    image_metrics  = ['F1Score'],
     pixel_metrics = ['AUROC'],
     learning_rate  = 1e-8,
     worker = 30,
@@ -103,7 +103,7 @@ def train(
 
     callbacks = [
         checkpoint_callback,
-        # EarlyStopping("pixel_AUROC"),
+        EarlyStopping("pixel_AUROC"),
         DeviceStatsMonitor(),
         # vis_callback,
     ]
@@ -111,7 +111,7 @@ def train(
     print("prepareing datamodule")
     # https://pytorch.org/vision/main/transforms.html#v2-api-ref
     transforms = v2.Compose([
-                    v2.Grayscale(), # Wide resNet has 3 channels
+                    # v2.Grayscale(), # Wide resNet has 3 channels
                     v2.PILToTensor(),
                     v2.Resize(
                         size=(resolution, resolution), 
@@ -119,12 +119,30 @@ def train(
                     ),
                     v2.ToDtype(torch.float32, scale=True),
                     # TODO: YouTransform
-                    v2.Normalize(mean=[0.485], std=[0.229]),
-                    # v2.Normalize(
-                    #     mean=[0.485, 0.456, 0.406], 
-                    #     std=[0.229, 0.224, 0.225],
-                    # ),
+                    # v2.Normalize(mean=[0.485], std=[0.229]),
+                    v2.Normalize(
+                        mean=[0.485, 0.456, 0.406], 
+                        std=[0.229, 0.224, 0.225],
+                    ),
                 ]) 
+
+    if model_name == "MyModel":# ""SimSID":
+        transforms = v2.Compose([
+                        v2.Grayscale(), # Wide resNet has 3 channels
+                        v2.PILToTensor(),
+                        v2.Resize(
+                            size=(resolution, resolution), 
+                            interpolation=v2.InterpolationMode.BILINEAR
+                        ),
+                        v2.ToDtype(torch.float32, scale=True),
+                        # TODO: YouTransform
+                        v2.Normalize(mean=[0.485], std=[0.229]),
+                        # v2.Normalize(
+                        #     mean=[0.485, 0.456, 0.406], 
+                        #     std=[0.229, 0.224, 0.225],
+                        # ),
+                    ]) 
+
 
     # Initialize the datamodule, model and engine
     datamodule = WDDD2_AD(

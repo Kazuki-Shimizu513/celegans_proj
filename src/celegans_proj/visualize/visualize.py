@@ -565,9 +565,9 @@ if __name__ == "__main__":
 
     logging.basicConfig(filename='./logs/debug.log', filemode='w', level=logging.DEBUG)
 
-    exp_name = "exp_20241110_1"
-    # model_names = ["PatchCore", "ReverseDistillation"]
-    model_names = ["SimSID"]
+    exp_name = "exp_20241209_predict"
+    model_names = ["PatchCore", "ReverseDistillation"]
+    # model_names = ["SimSID"]
 
     # base_dir = Path("/home/skazuki/playground/CaenorhabditisElegans_AnomalyDetection_Dataset/results/")
     base_dir = Path("/mnt/c/Users/compbio/Desktop/shimizudata/")

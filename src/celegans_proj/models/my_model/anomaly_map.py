@@ -61,7 +61,6 @@ class AnomalyMapGenerator(nn.Module):
         preds,targets,
         mode = "cosine", 
         scale = 4, # 64 -> 256
-        patch_size = (4,4), # 256 -> 64
         eps = 1e-100, # torch.finfo.eps,
     ):
         assert preds.shape == targets.shape,\
@@ -92,17 +91,12 @@ class AnomalyMapGenerator(nn.Module):
             onehot_target = torch.stack(onehot_target, dim=0)
             # print(f"{onehot_pred.shape=}\t{onehot_target.shape=}") # Class, latentChannel, H, W
 
-            # TODO:: patch cosine similarity
-#             dist = F.cosine_similarity(
-#                 pred.reshape(1, -1), target.reshape(1, -1), 
-#                 dim=1, eps=eps,
-#             ) 
-
-            onehot_pred = torch.sum(onehot_pred, 0, keepdim=True,).squeeze(0)
-            _pred = torch.mean(onehot_pred, 0, keepdim=True,).squeeze(0)
-            onehot_target = torch.sum(onehot_target, 0, keepdim=True,).squeeze(0)
-            _target = torch.mean(onehot_target, 0, keepdim=True,).squeeze(0)
-            diff = torch.sqrt((_pred - _target)**2 + eps) 
+            # cosine similarity
+            diff = F.cosine_similarity(
+                torch.mean(onehot_pred, 1, keepdim=True,),
+                torch.mean(onehot_target, 1, keepdim=True,),
+                dim=0, eps=eps,
+            ) 
 
             # print(f"{diff.shape=}")
             diffs.append(diff)

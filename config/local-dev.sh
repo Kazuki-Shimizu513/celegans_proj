@@ -1,7 +1,7 @@
 #!/bin/bash
 
 python ./src/celegans_proj/run/run.py \
-  --exp_name exp_20241106 \
+  --exp_name exp_20241209 \
   --in_dir /mnt/e/WDDD2_AD \
   --out_dir  /mnt/c/Users/compbio/Desktop/shimizudata/ \
   --batch 1 \
