@@ -461,7 +461,7 @@ def make_WDDD2_dataset(
     return samples
 
 def gen_anomalous(img_path, msk_path, size=(600,600,),):
-    img = Image.fromarray(np.zeros(size, dtype=np.uint8))
+    img = Image.fromarray(np.ones(size, dtype=np.uint8))
     msk = Image.fromarray(np.ones(size, dtype=np.uint8))
     img.save(img_path)
     msk.save(msk_path)
@@ -725,16 +725,19 @@ if __name__ == "__main__":
                     # YouTransform(examples["mean"], alpha=0.2, )
                 ]) 
 
+    # root = "/home/skazuki/data/WDDD2_AD" 
+    root = "/mnt/e/WDDD2_AD"
+
     length=10
     for phase in ("train", "val", "test"):
         for l in range(length):
-            img_path = f"/mnt/e/WDDD2_AD/wildType/{phase}/anomaly/{l:0=3}.png"
-            msk_path = f"/mnt/e/WDDD2_AD/wildType/ground_truth/anomaly/{l:0=3}_mask.png"
+            img_path = f"{root}/wildType/{phase}/anomaly/{l:0=3}.png"
+            msk_path = f"{root}/wildType/ground_truth/anomaly/{l:0=3}_mask.png"
             gen_anomalous(img_path, msk_path, size=(600,600,),)
      
 
     datamodule = WDDD2_AD(
-        root = "/mnt/e/WDDD2_AD",
+        root = root,  
         category = "wildType",
         train_batch_size = 32,
         eval_batch_size = 32,

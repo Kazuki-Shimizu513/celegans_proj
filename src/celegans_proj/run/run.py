@@ -95,7 +95,10 @@ def run():
         if model_name == "Patchcore":
             # resolution = 64 
             # resolution = 128
-            resolution = 256 
+            resolution = 160
+            # resolution = 192
+            # resolution = 224 # CUDA out of Memory
+            # resolution = 256 # CUDA out of Memory
         else: 
             resolution = args.resolution
         target_data = "wildType"

@@ -238,9 +238,13 @@ if __name__ == "__main__":
     # exp_name  = "exp_example"
     exp_name  = "exp_20241208"
 
-    out_dir = "/mnt/c/Users/compbio/Desktop/shimizudata/"
+    # out_dir = "/mnt/c/Users/compbio/Desktop/shimizudata/"
+    # in_dir = "/mnt/e/WDDD2_AD"
+
+    out_dir = "/home/skazuki/skazuki/result"
+    in_dir = "/home/skazuki/data/WDDD2_AD"
+
     log_dir  = "./logs"
-    in_dir = "/mnt/e/WDDD2_AD"
     dataset_name = "WDDD2_AD"
     model_name = "MyModel"
     target_data = "wildType"
