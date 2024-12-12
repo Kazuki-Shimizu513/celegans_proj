@@ -84,8 +84,8 @@ class MyLoss(nn.Module):
         if "vae" in self.train_models \
             and "diffusion" in self.train_models:
 
-            loss += self.loss_latent_weight * self.compute_recon_loss(
-                outputs['pred_latents'], outputs['latents'])
+            # loss += self.loss_latent_weight * self.compute_recon_loss(
+            #     outputs['pred_latents'], outputs['latents'])
             loss += self.loss_noise_weight * self.compute_recon_loss(
                 outputs['pred_noises'], outputs['noises'], )
 
@@ -135,14 +135,14 @@ class MyLoss(nn.Module):
             loss += self.loss_kl_weight * outputs['posterior'].kl().mean()# kl loss
 
         if torch.isnan(loss):
-            loss = torch.tensor(100.0, dtype=torch.float32,device=outputs['image'].device,requires_grad=True)
+            loss = torch.tensor(1.0, dtype=torch.float32,device=outputs['image'].device,requires_grad=True)
             print(f"nan in loss")
 
         if loss.dtype != torch.float:
             try:
                 loss = loss.to(torch.float)
             except:
-                loss = torch.tensor(100.0, dtype=torch.float32,device=outputs['image'].device,requires_grad=True)
+                loss = torch.tensor(1.0, dtype=torch.float32,device=outputs['image'].device,requires_grad=True)
             print(f"{loss.dytpe} in loss")
 
         return loss
