@@ -90,13 +90,15 @@ class MyTorchModel(nn.Module):
                                 "DownEncoderBlock2D",
                                 "DownEncoderBlock2D",
                                 "DownEncoderBlock2D",
+                                "DownEncoderBlock2D",
                             ),
             vae_up_block_types = (
                                 "UpDecoderBlock2D",
                                 "UpDecoderBlock2D",
                                 "UpDecoderBlock2D",
+                                "UpDecoderBlock2D",
                             ),
-            vae_block_out_channels = (64, 128, 256),
+            vae_block_out_channels = (64, 128, 256, 256),
             vae_latent_channels = 64,
             vae_norm_num_groups = 64,
             scaling_factor = 1, # 0.18215,
@@ -117,8 +119,8 @@ class MyTorchModel(nn.Module):
                                 "CrossAttnUpBlock2D",
                              ),
             unet_attention_head_dim = (5, 10, 20, 20),
-            # unet_block_out_channels = (320, 640, 1280, 1280),# 
-            unet_block_out_channels = (32, 64, 128, 256), # 
+            unet_block_out_channels = (320, 640, 1280, 1280),# 
+            # unet_block_out_channels = (32, 64, 128, 256), # 
             unet_cross_attention_dim= 1024,
             resnet_time_scale_shift = "default",
             time_embedding_type = "positional",
@@ -127,7 +129,7 @@ class MyTorchModel(nn.Module):
             attention_type = "default",
 
             # DDPM Scheduler
-            ddpm_num_steps= 10,# 1000,
+            ddpm_num_steps= 100,# 1000,
             beta_start = 0.0001, 
             beta_end = 0.02,
             trained_betas = None,
@@ -143,8 +145,8 @@ class MyTorchModel(nn.Module):
             model_id = "stabilityai/stable-diffusion-2",
             guidance_scale=0.0, 
             sag_scale=1.0, 
-            map_size = (8,8),
-            # map_size = (4,4),
+            # map_size = (8,8),
+            map_size = (4,4),
 
 
             # DiffSeg
@@ -346,9 +348,6 @@ class MyTorchModel(nn.Module):
 
         return  gen_images
 
-    def cvt_channel_gray2RGB(self,x):
-        return x.repeat(1, 3, 1, 1)
-
     def forward(self, batch, prompt="."):
         """ forward function for my torch model
             args:
@@ -405,9 +404,10 @@ class MyTorchModel(nn.Module):
             seg_masks, otsu_thresholds = self.make_ref_seg_msk(batch['image'], check=False,) # True, ) #(B, 256,256)
 
             gen_imgs = self.pipe.vae.decode(gen_latents/self.pipe.vae.config.scaling_factor, return_dict=False)[0]
+            # gen_imgs = self.cvt_channel_RGB2gray(gen_imgs)
 
         pred_imgs = self.pipe.vae.decode(pred_latents/self.pipe.vae.config.scaling_factor, return_dict=False)[0]
-
+        # pred_imgs = self.cvt_channel_RGB2gray(pred_imgs)
 
         # register_outputs in the way of dict , not tuple
         output = dict(
@@ -458,6 +458,11 @@ class MyTorchModel(nn.Module):
                 gen_masks=gen_masks,
               )
 
+        self.scale_variables(
+            output,
+            skip_name = ["image_path", "label", "posterior", ]
+        )
+
         anomaly_maps, pred_scores = self.anomaly_map_generator(output,)
         output.update(
             anomaly_maps = anomaly_maps,
@@ -465,24 +470,49 @@ class MyTorchModel(nn.Module):
         )
 
 
-        if self.training:
-
-            skip_name = ["image_path", "label", "posterior", ]
-            for name, x in output.items():
-                if name in skip_name:
-                    continue
-                output[name] = torch.nan_to_num(x, nan=0.0, posinf=1.0, neginf=-1.0)
-
-            for name, param in self.pipe.unet.state_dict().items():
-                param = torch.nan_to_num(param, nan=0.0, posinf=1.0, neginf=-1.0)
-                param = F.normalize(param, dim=0,)
-                self.pipe.unet.state_dict()[name] = param
 
         if not self.training:
             self.store_outputs(output, store=True) #False)# # TODO:: move to MyVisualizer CallBack
-        if not self.training: # # inference phase
-            output =  {"anomaly_maps": output["anomaly_maps"], "pred_scores": output["pred_scores"]}
+
+        # if not self.training: # # inference phase
+        #     output =  {"anomaly_maps": output["anomaly_maps"], "pred_scores": output["pred_scores"]}
+
         return output
+
+    def cvt_channel_gray2RGB(self,x):
+        return x.repeat(1, 3, 1, 1)
+
+    def cvt_channel_RGB2gray(self,x):
+        return v2.functional.rgb_to_grayscale(x, num_output_channels=1)
+
+    def min_max_scaling(self,v, new_min=0.0, new_max=1.0):
+        v_min, v_max = v.min(), v.max()
+        v_p = (v - v_min)/(v_max - v_min)*(new_max - new_min) + new_min
+        return v_p
+
+    def scale_variables(
+        self,
+        output,
+        skip_name = ["image_path", "label", "posterior", ],
+        img_name = ["image", "pred_imgs", "gen_imgs"],
+        latent_name = ["latents", "pred_latents", "gen_latents"],
+        noise_name = ["noises", "pred_noises", ],
+    ):
+        for name, x in output.items():
+            if name in skip_name:
+                continue
+            output[name] = torch.nan_to_num(x, nan=0.0, posinf=1.0, neginf=-1.0)
+            if name in [*latent_name, *noise_name,]:
+                output[name] = self.min_max_scaling(x, new_min=-1.0, new_max=1.0)
+            if name in img_name:
+                output[name] = self.min_max_scaling(x, new_min=0.0, new_max=1.0)
+            # print(f"{name}\tshape:{output[name].shape}\trange:{output[name].min().item()}\t{output[name].max().item()}")
+
+        for name, param in self.pipe.unet.state_dict().items():
+            param = torch.nan_to_num(param, nan=0.0, posinf=1.0, neginf=-1.0)
+            param = self.min_max_scaling(param, new_min=-1.0, new_max=1.0)
+            self.pipe.unet.state_dict()[name] = param
+
 
     def make_ref_seg_msk(
         self,
@@ -492,6 +522,8 @@ class MyTorchModel(nn.Module):
         # TODO:: make segmentation mask with kl_thresh 
         #    or something like entropy for reference in generation mask
         root = Path(self.out_path)
+        root = root.joinpath("outputs") 
+        root.mkdir(parents=True, exist_ok=True,)
         seg_masks = []
         otsu_thresholds = []
         imgs = imgs.numpy(force=True)
@@ -501,7 +533,7 @@ class MyTorchModel(nn.Module):
             if check:
                 img_hist, bin_edges = np.histogram(img, bins=256, range=(0,256))
                 plt.plot(img_hist)
-                plt.savefig(self.out_path + "/hist.png")
+                plt.savefig(str(root.joinpath("hist.png")))
                 plt.clf();plt.close();
 
             entr = entropy(img, disk(3)) # apply entropy filter
@@ -704,9 +736,9 @@ class MyTorchModel(nn.Module):
 
         # parts segmentation
         if self.training_mask:
-            KL_THRESHOLDS = self.DiffSegParamModel(latents)  
-            # KL_THRESHOLDS = torch.tensor([[0.9]*4] * latents.shape[0], device=self.device) 
-            pred_masks = self.segment_with_attn_maps(net_attn_maps,KL_THRESHOLDS,path, store=True)
+            # KL_THRESHOLDS = self.DiffSegParamModel(latents)  
+            KL_THRESHOLDS = torch.tensor([[0.9]*4] * latents.shape[0], device=self.device) 
+            pred_masks = self.segment_with_attn_maps(net_attn_maps,KL_THRESHOLDS,path, store=True, title = 'pred')
         else:
             KL_THRESHOLDS = torch.tensor([[0.9]*4] * latents.shape[0], device=self.device) 
             pred_masks = torch.randint(5,(latents.shape[0],256,256), device=KL_THRESHOLDS.device)
@@ -749,9 +781,9 @@ class MyTorchModel(nn.Module):
 
         # parts segmentation
         if self.training_mask:
-            gen_KL_THRESHOLDS = self.DiffSegParamModel(gen_latents)  
-            # gen_KL_THRESHOLDS = torch.tensor([[0.9]*4] * latents.shape[0], device=self.device) 
-            gen_masks = self.segment_with_attn_maps(gen_attn_maps,gen_KL_THRESHOLDS,path)
+            # gen_KL_THRESHOLDS = self.DiffSegParamModel(gen_latents)  
+            gen_KL_THRESHOLDS = torch.tensor([[0.9]*4] * latents.shape[0], device=self.device) 
+            gen_masks = self.segment_with_attn_maps(gen_attn_maps,gen_KL_THRESHOLDS,path, store=True, title = 'gen')
         else:
             # gen_KL_THRESHOLDS = torch.tensor([[0.9]*4] * latents.shape[0], device=self.device) 
             gen_masks = torch.randint(5,(latents.shape[0],256,256), device=KL_THRESHOLDS.device)
@@ -801,7 +833,7 @@ class MyTorchModel(nn.Module):
             # print(f"In get_attn_map:{map_size=}\t{type(map_size)=}") # (16,1280) #TODO:WTF
             # del module.processor.map_size
         map_size = self.map_size
-        # gc.collect()
+        gc.collect()
         return mid_attn_map, attn_maps, map_size
 
     def update_attn_maps(self, _attn_maps, attn_maps, timestep):# , process):
@@ -1001,7 +1033,7 @@ class MyTorchModel(nn.Module):
 
 
  
-    def segment_with_attn_maps(self,net_attn_maps,KL_THRESHOLDS, path, store=False):
+    def segment_with_attn_maps(self,net_attn_maps,KL_THRESHOLDS, path, store=False, title=None):
 
         pred_masks = []
         for attn_maps, KL_THRESHOLD, p in zip(net_attn_maps, KL_THRESHOLDS, path):
@@ -1012,14 +1044,14 @@ class MyTorchModel(nn.Module):
             if not self.training:
                 if store:
                     [base_dir, filename, suffix] = WDDD2FileNameUtil.strip_path(p)
-                    self.store_attn_map(weights_dict, out_name_without_pt=filename)# weight_size depends on VAE layer num
+                    self.store_attn_map(weights_dict,phase=title, out_name_without_pt=filename)# weight_size depends on VAE layer num
 
             weights_list = [
-                weights_dict["weight_64"],
+                # weights_dict["weight_64"],
                 weights_dict["weight_32"],
                 weights_dict["weight_16"],
                 weights_dict["weight_8"],
-                # weights_dict["weight_4"],
+                weights_dict["weight_4"],
             ]
             weight_ratio = torch.tensor(self.segmentor.get_weight_rato(weights_list)).to(device=self.device)
             pred = self.segmentor.segment(*weights_list, weight_ratio=weight_ratio,) # b x 512 x 512
@@ -1060,11 +1092,11 @@ class MyTorchModel(nn.Module):
                 weight_64.append(attn_map)
 
         weights_dict = dict(
-            # weight_4=torch.mean(torch.stack(weight_4,dim=0),dim=0, keepdim=True,),
+            weight_4=torch.mean(torch.stack(weight_4,dim=0),dim=0, keepdim=True,),
             weight_8=torch.mean(torch.stack(weight_8,dim=0),dim=0, keepdim=True,),
             weight_16=torch.mean(torch.stack(weight_16,dim=0),dim=0, keepdim=True,),
             weight_32=torch.mean(torch.stack(weight_32,dim=0),dim=0, keepdim=True,),
-            weight_64=torch.mean(torch.stack(weight_64,dim=0),dim=0, keepdim=True,),
+            # weight_64=torch.mean(torch.stack(weight_64,dim=0),dim=0, keepdim=True,),
         )
  
         return weights_dict
@@ -1104,7 +1136,7 @@ class MyTorchModel(nn.Module):
         for k, v in outputs.items():
             if k not in [*img_kind, *msk_kind]:# *latent_kind, ]:
                 continue
-            p = out_path.joinpath(f'{k}')
+            p = p.joinpath(f'{k}')
             p.mkdir(parents=True, exist_ok=True,)
             for idx, pa in enumerate(outputs['image_path']):
                 [base_dir, filename, suffix] = WDDD2FileNameUtil.strip_path(pa)
@@ -1122,7 +1154,11 @@ class MyTorchModel(nn.Module):
                         _v = _v.permute(1, 2, 0) # C, W, H -> W, H, C,
                     # print(f"\t{_v.shape=}\n")
                     if store:
-                        self.save_image(image=np.array(_v.numpy(force=True),np.uint8), root=p, filename=f"{filename}.png")
+                        self.save_image(
+                            image=np.array(_v.numpy(force=True),np.uint8),
+                            root=p,
+                            filename=f"{filename}.png"
+                        )
                 if k in msk_kind:
                     # continue
                     img = outputs['image'][idx].repeat(3, 1, 1)#  * 255.0
@@ -1149,12 +1185,14 @@ class MyTorchModel(nn.Module):
             plt.close(fig)
 
     # TODO :: move to MyVisualizer Callback
-    def store_attn_map(self,weights_dict, out_name_without_pt="img_name"):
+    def store_attn_map(self,weights_dict, phase="pred", out_name_without_pt="img_name"):
         out_path = Path(self.out_path)
         p = out_path.joinpath(f'attention_maps')
+        p = p.joinpath(f'{phase}')
         p.mkdir(parents=True, exist_ok=True,)
         torch.save(weights_dict,str(p.joinpath(f'{out_name_without_pt}.pt')))
 
+    # TODO :: move to MyVisualizer Callback
     def save_image(self,filename: Path | str, image: np.ndarray | Figure, root: Path | None = None) -> None:
         """Save an image to the file system.
 
@@ -1183,6 +1221,7 @@ class MyTorchModel(nn.Module):
         cv2.imwrite(str(file_path), image)
 
 
+    # TODO :: move to MyVisualizer Callback
     def figure_to_array(self,fig: Figure) -> np.ndarray:
         """Convert a matplotlib figure to a numpy array.
 

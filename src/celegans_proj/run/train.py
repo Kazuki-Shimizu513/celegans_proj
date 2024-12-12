@@ -18,6 +18,7 @@ from lightning.pytorch.callbacks import (
     DeviceStatsMonitor,
 )
 
+from anomalib.data import MVTec
 from anomalib import TaskType
 from anomalib.models import (
     Patchcore,
@@ -84,8 +85,8 @@ def train(
     image_dir.mkdir(parents=True, exist_ok=True)
 
     checkpoint_callback = ModelCheckpoint(
-        monitor="pixel_AUROC", # pixel_metrics[0], 
-        mode='max',
+        monitor="val_loss", # pixel_metrics[0], 
+        mode='min',
         dirpath = str(model_dir),
         filename='{epoch}',
         save_top_k= 1,
@@ -103,8 +104,8 @@ def train(
 
     callbacks = [
         checkpoint_callback,
-        # EarlyStopping("pixel_AUROC"),
-        DeviceStatsMonitor(),
+        EarlyStopping("val_loss"),
+        # DeviceStatsMonitor(),
         # vis_callback,
     ]
 
@@ -126,7 +127,7 @@ def train(
                     ),
                 ]) 
 
-    if model_name == "MyModel":# ""SimSID":
+    if model_name in ["MyModel", "SimSID"]:
         transforms = v2.Compose([
                         v2.Grayscale(), # Wide resNet has 3 channels
                         v2.PILToTensor(),
@@ -142,9 +143,26 @@ def train(
                         #     std=[0.229, 0.224, 0.225],
                         # ),
                     ]) 
-
-
     # Initialize the datamodule, model and engine
+
+    # datamodule = MVTec(
+    #     root = in_dir ,
+    #     category = target_data,
+    #     train_batch_size = batch,
+    #     eval_batch_size = batch,
+    #     num_workers = worker, 
+    #     task = task , # TaskType.SEGMENTATION,#CLASSIFICATION,#  
+    #     val_split_mode = ValSplitMode.FROM_TEST,
+    #     val_split_ratio = 0.1,
+    #     test_split_mode = TestSplitMode.FROM_DIR,
+    #     test_split_ratio = 0.2,
+    #     image_size = (resolution,resolution),
+    #     transform = transforms,
+    #     seed  = seed,# 44,
+    # )
+    # datamodule.prepare_data()
+
+
     datamodule = WDDD2_AD(
         root = in_dir ,
         category = target_data,
@@ -176,7 +194,6 @@ def train(
     print(f"{type(batch['mask'])=}\t{batch['mask'].shape=}")
     print()
 
-    # return 0
     print("prepareing model")
 
     if model_name == "Patchcore":
@@ -219,6 +236,7 @@ def train(
         image_metrics=image_metrics,
         pixel_metrics=pixel_metrics,
         max_epochs = -1,
+        log_every_n_steps=1,
     )
     print(f"{engine.image_metric_names=}\n{engine.pixel_metric_names=}")
     # print(f"{engine._cache.args["callbacks"]=}")
@@ -236,31 +254,35 @@ if __name__ == "__main__":
     logging.basicConfig(filename='./logs/debug.log', filemode='w', level=logging.DEBUG)
 
     # exp_name  = "exp_example"
-    exp_name  = "exp_20241208"
+    exp_name  = "exp_20241211"
+
+    dataset_name = "WDDD2_AD"
+    target_data = "wildType"
+
+#     dataset_name  = "MVTec"
+#     target_data = "bottle"
 
     # out_dir = "/mnt/c/Users/compbio/Desktop/shimizudata/"
-    # in_dir = "/mnt/e/WDDD2_AD"
+    # in_dir = f"/mnt/e/{dataset_name}"
 
-    out_dir = "/home/skazuki/skazuki/result"
-    in_dir = "/home/skazuki/data/WDDD2_AD"
+    out_dir = "/home/skazuki/result"
+    in_dir = f"/home/skazuki/data/{dataset_name}"
 
     log_dir  = "./logs"
-    dataset_name = "WDDD2_AD"
     model_name = "MyModel"
-    target_data = "wildType"
-    threshold =  ManualThreshold(default_value=0.5) # "F1AdaptiveThreshold"
-    image_metrics  = ['F1Score']# Useless:['MinMax', 'AnomalyScoreDistribution',]
-    pixel_metrics = ['AUROC']# Useless:['MinMax', 'AnomalyScoreDistribution',]# 
+    threshold =   "F1AdaptiveThreshold" # ManualThreshold(default_value=0.5) # 
+    image_metrics  = ['F1Score']
+    pixel_metrics = ['AUROC']
 
-    version = "v0" # "latest"# "v0" # 
-    ckpt = f"{out_dir}/{exp_name}/{model_name}/{dataset_name}/{target_data}/{version}/weights/lightning/model.ckpt"
     ckpt=None
+    version = "latest"# "v0" # 
+    ckpt = f"{out_dir}/{exp_name}/{model_name}/{dataset_name}/{target_data}/{version}/weights/lightning/model.ckpt"
 
     logger = WandbLogger(
         project =f"{exp_name}",
         name = f"{model_name}_{target_data}",
         save_dir = str(log_dir),
-        log_model = "all",#  True, 
+        # log_model = "all",#  True, 
     )
     # logger.experiment.config.update(**vars(args))
 
@@ -277,14 +299,14 @@ if __name__ == "__main__":
         pixel_metrics = pixel_metrics,
 
 
-        learning_rate  = 1e-1,
+        learning_rate  = 1e-4,
         ckpt = ckpt, 
         resolution =  256,
         task = TaskType.SEGMENTATION, #CLASSIFICATION,#
-        worker = 30,
+        worker = 16,# 30,
         seed  =  44,
-        batch = 10, # 1, #
-        debug = False,#True, #  
+        batch = 16, # 2, #
+        debug = False, #True, # 
         debug_data_ratio = 0.08, 
     )
 

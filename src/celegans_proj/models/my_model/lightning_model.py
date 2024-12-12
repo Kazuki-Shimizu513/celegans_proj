@@ -12,6 +12,9 @@ from anomalib.models.components import AnomalyModule
 from .torch_model import MyTorchModel
 from .loss import MyLoss
 
+from logging import getLogger
+
+logger = getLogger(__name__)
 
 class MyModel(AnomalyModule):
     """PL Lightning Module for My model Algorithm.
@@ -89,13 +92,15 @@ class MyModel(AnomalyModule):
                                 "DownEncoderBlock2D",
                                 "DownEncoderBlock2D",
                                 "DownEncoderBlock2D",
+                                "DownEncoderBlock2D",
                             ),
             vae_up_block_types = (
                                 "UpDecoderBlock2D",
                                 "UpDecoderBlock2D",
                                 "UpDecoderBlock2D",
+                                "UpDecoderBlock2D",
                             ),
-            vae_block_out_channels = (64, 128, 256),
+            vae_block_out_channels = (64, 128, 256, 256),
             vae_latent_channels = 64,
             vae_norm_num_groups = 64,
             scaling_factor = 1, # 0.18215,
@@ -116,7 +121,8 @@ class MyModel(AnomalyModule):
                                 "CrossAttnUpBlock2D",
                              ),
             unet_attention_head_dim = (5, 10, 20, 20),
-            unet_block_out_channels = (32, 64, 128, 256), # 
+            # unet_block_out_channels = (32, 64, 128, 256), # 
+            unet_block_out_channels = (320, 640, 1280, 1280),# 
             unet_cross_attention_dim= 1024,
             resnet_time_scale_shift = "default",
             time_embedding_type = "positional",
@@ -170,7 +176,8 @@ class MyModel(AnomalyModule):
             params,
             lr=self.learning_rate,
             betas=(0.95, 0.999),
-            eps=1e-08,
+            # eps=1e-100,
+            eps=1e-8,
         )
 
         # from diffusers.optimization import get_scheduler
@@ -208,9 +215,9 @@ class MyModel(AnomalyModule):
         """
         del args, kwargs  # These variables are not used.
 
-        # loss = self.loss(*self.model(batch["image"]))
         loss = self.loss(self.model(batch))
         self.log("train_loss", loss.item(), on_epoch=True, prog_bar=True, logger=True)
+
         return {"loss": loss}
 
     def validation_step(self, batch: dict[str, str | torch.Tensor], batch_idx, *args, **kwargs) -> STEP_OUTPUT:
@@ -228,29 +235,39 @@ class MyModel(AnomalyModule):
         """
 
         output = self.model(batch)
-        # Add anomaly maps and predicted scores to the batch.
+        loss = self.loss(output)
 
+        # Add anomaly maps and predicted scores to the batch.
+        batch["anomaly_maps"] = output["anomaly_maps"]
+        batch["pred_scores"] = output["pred_scores"]
+
+        self.log("val_loss", loss.item(), on_epoch=True, prog_bar=True, logger=True)
+        return batch
+
+    def predict_step(self, batch: dict[str, str | torch.Tensor], *args, **kwargs) -> STEP_OUTPUT:
+        """Perform a prediction step
+
+        Args:
+          batch (dict[str, str | torch.Tensor]): Input batch
+            batch_idx : Input Batch index
+          args: Additional arguments.
+          kwargs: Additional keyword arguments.
+
+        Returns:
+          Dictionary containing images, anomaly maps, true labels and masks.
+          These are required in `predict_epoch_end` for feature concatenation.
+        """
+
+        output = self.model(batch)
+        loss = self.loss(output)
+
+        # Add anomaly maps and predicted scores to the batch.
         batch["anomaly_maps"] = output["anomaly_maps"]
         batch["pred_scores"] = output["pred_scores"]
 
         return batch
 
-#     def predict_step(self, batch: dict[str, str | torch.Tensor], *args, **kwargs) -> STEP_OUTPUT:
-#         """Perform a prediction step
 
-#         Args:
-#           batch (dict[str, str | torch.Tensor]): Input batch
-#             batch_idx : Input Batch index
-#           args: Additional arguments.
-#           kwargs: Additional keyword arguments.
-
-#         Returns:
-#           Dictionary containing images, anomaly maps, true labels and masks.
-#           These are required in `predict_epoch_end` for feature concatenation.
-#         """
-
-#         batch["anomaly_maps"] = self.model(batch["image"])
-#         return batch
 
 
     @property

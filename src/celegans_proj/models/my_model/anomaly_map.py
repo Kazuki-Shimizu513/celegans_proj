@@ -34,13 +34,14 @@ class AnomalyMapGenerator(nn.Module):
                         mode = "L2", 
                       )
 
-        seg_dist = self.compute_segmentation_distance(
-                        outputs["pred_masks"], 
-                        outputs["pred_latents"], outputs["gen_latents"], 
-                        mode = "cosine", 
-                      )
+        # seg_dist = self.compute_segmentation_distance(
+        #                 outputs["pred_masks"], 
+        #                 outputs["pred_latents"], outputs["gen_latents"], 
+        #                 mode = "cosine", 
+        #               )
+        # anomaly_maps = (recon_dist + seg_dist) / 2 
 
-        anomaly_maps = (recon_dist + seg_dist) / 2 
+        anomaly_maps = recon_dist
         anomaly_maps = self.min_max_scaling(anomaly_maps)
 
         # print(f"{anomaly_maps.shape=}{anomaly_maps.min()=}{anomaly_maps.max()=}")
@@ -59,7 +60,7 @@ class AnomalyMapGenerator(nn.Module):
         masks, 
         preds,targets,
         mode = "cosine", 
-        scale = 4, # 64 -> 256
+        scale = 8, # 32 -> 256 # 64 -> 256
         eps = 1e-100, # torch.finfo.eps,
     ):
         assert preds.shape == targets.shape,\
@@ -164,15 +165,14 @@ class AnomalyMapGenerator(nn.Module):
         # print(f"recon  value : {scores},\n\t{scores.shape=}{scores.device=}")
 
         # Calc segmentation metrics
-        _scores = []
-        for pred, gen in zip(pred_masks, gen_masks):
-            mIoU = self.calc_meanIoU(pred, gen,)
-            score = 1 - mIoU.mean()
-            _scores.append(score)
-        _scores = torch.stack(_scores, dim=0)
+        # _scores = []
+        # for pred, gen in zip(pred_masks, gen_masks):
+        #     mIoU = self.calc_meanIoU(pred, gen,) # TODO::fix error
+        #     score = 1 - mIoU.mean()
+        #     _scores.append(score)
+        # _scores = torch.stack(_scores, dim=0)
         # print(f"segment value : {_scores},\n\t{_scores.shape=}{_scores.device=}")
- 
-        scores = (scores + _scores)/2
+        # scores = (scores + _scores)/2
 
         return scores
 

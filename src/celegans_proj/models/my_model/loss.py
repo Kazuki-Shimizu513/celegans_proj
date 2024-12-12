@@ -64,22 +64,6 @@ class MyLoss(nn.Module):
 #         print(f"{outputs['gen_masks'].shape=}{outputs['pred_masks'].shape=}\t{outputs['seg_masks'].shape=}")
 #         print(f"{outputs['pred_scores'].shape=}\t{outputs['label'].shape=}")
 
-        for title in ("pred_imgs", "image", "gen_imgs",):
-            x = outputs[title]
-            x = MyLoss.min_max_scaling(x , feature_range=(0,1), eps=1e-100,)
-            outputs[title] = x
-
-        for title in ("pred_latents", "latents", "gen_latents",):
-            x = outputs[title]
-            x = MyLoss.min_max_scaling(x , feature_range=(-1,1), eps=1e-100,)
-            outputs[title] = x
-
-        for title in ("pred_noises", "noises",):
-            x = outputs[title]
-            x = MyLoss.min_max_scaling(x , feature_range=(0,1), eps=1e-100,)
-            outputs[title] = x
-
-
 
         loss = self.loss_image_weight * self.compute_recon_loss(
             outputs['pred_imgs'], outputs['image'], perceptual="ssim")
@@ -105,11 +89,10 @@ class MyLoss(nn.Module):
             loss += self.loss_noise_weight * self.compute_recon_loss(
                 outputs['pred_noises'], outputs['noises'], )
 
-            # loss += self.loss_gen_weight * self.compute_recon_loss( # CUDA IndexError
-            #     outputs['gen_imgs'], outputs['image'], )
-
-            # loss += self.loss_gen_weight * self.compute_recon_loss(
-            #     outputs['gen_latents'], outputs['latents'], )
+            loss += self.loss_gen_weight * self.compute_recon_loss(
+                outputs['gen_imgs'], outputs['image'], )
+            loss += self.loss_gen_weight * self.compute_recon_loss(
+                outputs['gen_latents'], outputs['latents'], )
 
             # loss += self.loss_emb_weight * self.compute_embedding_loss(
             #     outputs['gen_latents'], outputs['latents'],)
