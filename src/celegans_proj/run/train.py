@@ -218,7 +218,7 @@ def train(
             train_models=["vae", "diffusion", ],
             training = True,
             training_mask = True,
-            ddpm_num_steps= 10,
+            ddpm_num_steps= 1000,
             out_path = str(out_dir),
         )
     else:
@@ -254,7 +254,8 @@ if __name__ == "__main__":
     logging.basicConfig(filename='./logs/debug.log', filemode='w', level=logging.DEBUG)
 
     # exp_name  = "exp_example"
-    exp_name  = "exp_20241211"
+    # exp_name  = "exp_20241211"
+    exp_name  = "exp_20241213"
 
     dataset_name = "WDDD2_AD"
     target_data = "wildType"
@@ -262,11 +263,11 @@ if __name__ == "__main__":
 #     dataset_name  = "MVTec"
 #     target_data = "bottle"
 
-    out_dir = "/mnt/c/Users/compbio/Desktop/shimizudata/"
-    in_dir = f"/mnt/e/{dataset_name}"
+#     out_dir = "/mnt/c/Users/compbio/Desktop/shimizudata/"
+#     in_dir = f"/mnt/e/{dataset_name}"
 
-    # out_dir = "/home/skazuki/result"
-    # in_dir = f"/home/skazuki/data/{dataset_name}"
+    out_dir = "/home/skazuki/result"
+    in_dir = f"/home/skazuki/data/{dataset_name}"
 
     log_dir  = "./logs"
     model_name = "MyModel"
@@ -275,8 +276,9 @@ if __name__ == "__main__":
     pixel_metrics = ['AUROC']
 
     ckpt=None
-    version = "latest"# "v0" # 
-    ckpt = f"{out_dir}/{exp_name}/{model_name}/{dataset_name}/{target_data}/{version}/weights/lightning/model.ckpt"
+    # version = "latest"# "v0" # 
+    # ckpt = f"{out_dir}/{exp_name}/{model_name}/{dataset_name}/{target_data}/{version}/weights/lightning/model.ckpt"
+    ckpt = f"{out_dir}/exp_20241211/models/epoch=10.ckpt"
 
     logger = WandbLogger(
         project =f"{exp_name}",
@@ -305,7 +307,7 @@ if __name__ == "__main__":
         worker = 16,# 30,
         seed  =  44,
         batch = 16, # 2, #
-        debug = True, # False, #
+        debug = False, #True, #
         debug_data_ratio = 0.08, 
     )
 
