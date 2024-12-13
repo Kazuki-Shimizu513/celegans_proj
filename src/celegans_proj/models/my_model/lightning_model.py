@@ -259,7 +259,6 @@ class MyModel(AnomalyModule):
         """
 
         output = self.model(batch)
-        loss = self.loss(output)
 
         # Add anomaly maps and predicted scores to the batch.
         batch["anomaly_maps"] = output["anomaly_maps"]

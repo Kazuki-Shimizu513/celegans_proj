@@ -123,8 +123,7 @@ def predict(
         eval_batch_size = batch,
         num_workers = worker, 
         task =  task, 
-        val_split_mode = ValSplitMode.FROM_TEST,
-        val_split_ratio = 0.01,
+        val_split_mode = ValSplitMode.SAME_AS_TEST,
         image_size = (resolution,resolution),
         transform = transforms,
         seed  = seed,
@@ -229,22 +228,31 @@ if __name__ == "__main__":
 
 
     # exp_name = "exp_example"
-    exp_name  = "exp_20241206"
+    exp_name  = "exp_20241211"
 
-    out_dir = Path("/mnt/c/Users/compbio/Desktop/shimizudata/")
-    # out_dir = Path("/home/skazuki/playground/CaenorhabditisElegans_AnomalyDetection_Dataset/results/")
+    dataset_name = "WDDD2_AD"
+    target_data = "wildType"
+
+#     dataset_name  = "MVTec"
+#     target_data = "bottle"
+
+    out_dir = Path("/mnt/c/Users/compbio/Desktop/shimizudata/exp_server/")
+    in_dir = Path(f"/mnt/e/{dataset_name}")
+
+    # out_dir = Path("/home/skazuki/result")
+    # in_dir = Path(f"/home/skazuki/data/{dataset_name}")
+
     log_dir  = Path("./logs")
-    in_dir = Path("/mnt/e/WDDD2_AD")
-    # in_dir = Path("/home/skazuki/data/WDDD2_AD")
-
     # model_names = [ "Patchcore",  "ReverseDistillation",]
     # model_names = [ "Patchcore",]
     # model_names = [ "ReverseDistillation",]
     model_names = ["MyModel"]
-    threshold =  ManualThreshold(default_value=0.9) # "F1AdaptiveThreshold"
+
+    threshold =  ManualThreshold(default_value=0.9) # "F1AdaptiveThreshold" #
     image_metrics  = ['F1Score']# Useless:['MinMax', 'AnomalyScoreDistribution',]
     pixel_metrics = ['AUROC']# Useless:['MinMax', 'AnomalyScoreDistribution',]# 
 
+    version = "v1" # "latest"
 
     for kind in pseudo_anomaly_modes :
 
@@ -253,11 +261,10 @@ if __name__ == "__main__":
             logger = WandbLogger(
                 project=exp_name,
                 name = f"{model_name}_{kind}",
-                log_model = "all",#  True, 
                 save_dir = str(log_dir),
             )
 
-            ckpt_path  = out_dir.joinpath(f"{exp_name}/{model_name}/WDDD2_AD/wildType/latest/weights/lightning/model.ckpt")
+            ckpt_path  = out_dir.joinpath(f"{exp_name}/{model_name}/{dataset_name}/wildType/{version}/weights/lightning/model.ckpt")
 
             predict(
                 exp_name =f"{exp_name}_predict",
@@ -277,7 +284,7 @@ if __name__ == "__main__":
                 worker = 16,
                 seed=44,
                 batch = 1,
-                debug = False, 
-                debug_data_ratio = 0.08, 
+                debug = True,# False,
+                debug_data_ratio = 0.1,
             )
 

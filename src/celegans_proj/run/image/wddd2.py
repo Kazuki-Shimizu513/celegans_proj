@@ -219,7 +219,7 @@ class WDDD2_AD(AnomalibDataModule):
         )
 
         if self.debug:
-            for attribute in ("train_data", "val_data"):# , "test_data"):
+            for attribute in ("train_data", "val_data", "test_data"):
                 dataset = getattr(self, attribute)
                 delattr(self, attribute)
                 subset = self.random_subsampling(
@@ -227,7 +227,10 @@ class WDDD2_AD(AnomalibDataModule):
                         seed = self.seed,
                         ratio =self.debug_data_ratio,
                  )
-                subset.samples = _add_anomalous(subset.samples, length=3)
+
+                if attribute in ("train_data", "val_data",):
+                    subset.samples = _add_anomalous(subset.samples, length=3)
+
                 setattr(self, attribute, subset)
 
     def random_subsampling(

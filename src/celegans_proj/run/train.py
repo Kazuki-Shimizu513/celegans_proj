@@ -262,11 +262,11 @@ if __name__ == "__main__":
 #     dataset_name  = "MVTec"
 #     target_data = "bottle"
 
-    # out_dir = "/mnt/c/Users/compbio/Desktop/shimizudata/"
-    # in_dir = f"/mnt/e/{dataset_name}"
+    out_dir = "/mnt/c/Users/compbio/Desktop/shimizudata/"
+    in_dir = f"/mnt/e/{dataset_name}"
 
-    out_dir = "/home/skazuki/result"
-    in_dir = f"/home/skazuki/data/{dataset_name}"
+    # out_dir = "/home/skazuki/result"
+    # in_dir = f"/home/skazuki/data/{dataset_name}"
 
     log_dir  = "./logs"
     model_name = "MyModel"
@@ -282,7 +282,6 @@ if __name__ == "__main__":
         project =f"{exp_name}",
         name = f"{model_name}_{target_data}",
         save_dir = str(log_dir),
-        # log_model = "all",#  True, 
     )
     # logger.experiment.config.update(**vars(args))
 
@@ -306,7 +305,7 @@ if __name__ == "__main__":
         worker = 16,# 30,
         seed  =  44,
         batch = 16, # 2, #
-        debug = False, #True, # 
+        debug = True, # False, #
         debug_data_ratio = 0.08, 
     )
 

@@ -785,7 +785,7 @@ class MyTorchModel(nn.Module):
             gen_KL_THRESHOLDS = torch.tensor([[0.9]*4] * latents.shape[0], device=self.device) 
             gen_masks = self.segment_with_attn_maps(gen_attn_maps,gen_KL_THRESHOLDS,path, store=True, title = 'gen')
         else:
-            # gen_KL_THRESHOLDS = torch.tensor([[0.9]*4] * latents.shape[0], device=self.device) 
+            gen_KL_THRESHOLDS = torch.tensor([[0.9]*4] * latents.shape[0], device=self.device) 
             gen_masks = torch.randint(5,(latents.shape[0],256,256), device=KL_THRESHOLDS.device)
         del gen_attn_maps
         gc.collect()
@@ -1132,11 +1132,11 @@ class MyTorchModel(nn.Module):
         store=False,
     ):
         out_path = Path(self.out_path)
-        p = out_path.joinpath(f'outputs')
+        out_path = out_path.joinpath(f'outputs')
         for k, v in outputs.items():
             if k not in [*img_kind, *msk_kind]:# *latent_kind, ]:
                 continue
-            p = p.joinpath(f'{k}')
+            p = out_path.joinpath(f'{k}')
             p.mkdir(parents=True, exist_ok=True,)
             for idx, pa in enumerate(outputs['image_path']):
                 [base_dir, filename, suffix] = WDDD2FileNameUtil.strip_path(pa)
