@@ -68,8 +68,10 @@ class MyLoss(nn.Module):
         loss = self.loss_image_weight * self.compute_recon_loss(
             outputs['pred_imgs'], outputs['image'], perceptual="ssim")
 
-        # mask_entropy = self.fmt_segMask2entropy(outputs['mask'].to(torch.long), # (1,256,256) -> (1,1,256,256)
-                            # num_class = len(outputs['mask'].unique().tolist()))# +1,)
+        # mask_entropy = self.fmt_segMask2entropy(
+        #     outputs['mask'].to(torch.long), # (1,256,256) -> (1,1,256,256)
+        #     num_class = len(outputs['mask'].unique().tolist())# +1,
+        # )
         # print(f"{outputs['anomaly_maps'].shape=}\t{outputs['mask'].shape=}{mask_entropy.shape=}")
         # loss += self.loss_image_weight * self.compute_recon_loss(
         #     outputs['anomaly_maps'],   
@@ -84,8 +86,8 @@ class MyLoss(nn.Module):
         if "vae" in self.train_models \
             and "diffusion" in self.train_models:
 
-            # loss += self.loss_latent_weight * self.compute_recon_loss(
-            #     outputs['pred_latents'], outputs['latents'])
+            loss += self.loss_latent_weight * self.compute_recon_loss(
+                outputs['pred_latents'], outputs['latents'])
             loss += self.loss_noise_weight * self.compute_recon_loss(
                 outputs['pred_noises'], outputs['noises'], )
 
