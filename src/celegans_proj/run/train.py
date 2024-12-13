@@ -74,7 +74,7 @@ def train(
     debug_data_ratio = 0.01, 
 ):
 
-    seed_everything(seed)
+    seed_everything(seed, workers=True)
 
     out_dir = Path(out_dir)
     out_dir = out_dir.joinpath(f"{exp_name}")
@@ -237,6 +237,7 @@ def train(
         pixel_metrics=pixel_metrics,
         max_epochs = -1,
         log_every_n_steps=1,
+        deterministic=True,
     )
     print(f"{engine.image_metric_names=}\n{engine.pixel_metric_names=}")
     # print(f"{engine._cache.args["callbacks"]=}")
@@ -300,7 +301,7 @@ if __name__ == "__main__":
         pixel_metrics = pixel_metrics,
 
 
-        learning_rate  = 1e-4,
+        learning_rate  = 1e-1,
         ckpt = ckpt, 
         resolution =  256,
         task = TaskType.SEGMENTATION, #CLASSIFICATION,#

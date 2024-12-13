@@ -645,7 +645,8 @@ class MyTorchModel(nn.Module):
                                           device=latents.device,).long()
             noisy_latents = self.pipe.scheduler.add_noise(latents, noises, timesteps)
         else:
-            timesteps = torch.tensor([self.ddpm_num_steps-1] * len(latents))
+            steps = 50 if self.ddpm_num_steps > 50 else self.ddpm_num_steps
+            timesteps = torch.tensor([steps-1] * len(latents))
             noisy_latents = latents.clone()
         pred_noises = torch.zeros_like(noises)
 

@@ -70,7 +70,7 @@ def predict(
 
 ):
 
-    seed_everything(seed)
+    seed_everything(seed, workers=True)
     out_dir = Path(out_dir)
     out_dir = out_dir.joinpath(f"{exp_name}")
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -188,6 +188,7 @@ def predict(
         threshold = threshold, 
         image_metrics=image_metrics,
         pixel_metrics=pixel_metrics,
+        deterministic=True,
     )
 
 
