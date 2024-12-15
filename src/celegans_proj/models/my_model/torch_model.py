@@ -645,7 +645,7 @@ class MyTorchModel(nn.Module):
                                           device=latents.device,).long()
             noisy_latents = self.pipe.scheduler.add_noise(latents, noises, timesteps)
         else:
-            steps = 50 if self.ddpm_num_steps > 50 else self.ddpm_num_steps
+            steps = 10 if self.ddpm_num_steps > 10 else self.ddpm_num_steps
             timesteps = torch.tensor([steps-1] * len(latents))
             noisy_latents = latents.clone()
         pred_noises = torch.zeros_like(noises)
@@ -1175,6 +1175,7 @@ class MyTorchModel(nn.Module):
     # TODO :: move to MyVisualizer Callback
     def vis_without_label(self,M,save=False,name="a",num_class=26):
         out_path = Path(self.out_path)
+        out_path = out_path.joinpath(f'outputs')
         p = out_path.joinpath(f'pred_segmentation_maps')
         p.mkdir(parents=True, exist_ok=True,)
         fig = plt.figure(figsize=(20, 20))

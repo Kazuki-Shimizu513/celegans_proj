@@ -104,7 +104,7 @@ def train(
 
     callbacks = [
         checkpoint_callback,
-        EarlyStopping("val_loss"),
+        # EarlyStopping("val_loss"),
         # DeviceStatsMonitor(),
         # vis_callback,
     ]
@@ -218,7 +218,7 @@ def train(
             train_models=["vae", "diffusion", ],
             training = True,
             training_mask = True,
-            ddpm_num_steps= 1000,
+            ddpm_num_steps= 50,
             out_path = str(out_dir),
         )
     else:
@@ -237,7 +237,6 @@ def train(
         pixel_metrics=pixel_metrics,
         max_epochs = -1,
         log_every_n_steps=1,
-        deterministic=True,
     )
     print(f"{engine.image_metric_names=}\n{engine.pixel_metric_names=}")
     # print(f"{engine._cache.args["callbacks"]=}")
@@ -276,10 +275,10 @@ if __name__ == "__main__":
     image_metrics  = ['F1Score']
     pixel_metrics = ['AUROC']
 
-    ckpt=None
-    # version = "latest"# "v0" # 
-    # ckpt = f"{out_dir}/{exp_name}/{model_name}/{dataset_name}/{target_data}/{version}/weights/lightning/model.ckpt"
-    ckpt = f"{out_dir}/exp_20241211/models/epoch=10.ckpt"
+    # ckpt=None
+    # ckpt = f"{out_dir}/exp_20241213/models/epoch=15.ckpt"
+    version = "latest"# "v0" # 
+    ckpt = f"{out_dir}/{exp_name}/{model_name}/{dataset_name}/{target_data}/{version}/weights/lightning/model.ckpt"
 
     logger = WandbLogger(
         project =f"{exp_name}",
@@ -301,7 +300,7 @@ if __name__ == "__main__":
         pixel_metrics = pixel_metrics,
 
 
-        learning_rate  = 1e-1,
+        learning_rate  = 1e-4,
         ckpt = ckpt, 
         resolution =  256,
         task = TaskType.SEGMENTATION, #CLASSIFICATION,#

@@ -188,7 +188,6 @@ def predict(
         threshold = threshold, 
         image_metrics=image_metrics,
         pixel_metrics=pixel_metrics,
-        deterministic=True,
     )
 
 
