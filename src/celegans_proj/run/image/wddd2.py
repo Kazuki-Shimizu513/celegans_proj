@@ -249,50 +249,70 @@ class WDDD2_AD(AnomalibDataModule):
         # print(f"total iterations: {len(subset)=}")
         return subset
 
-#     def prepare_data(self) -> None:
-#         """Download the dataset if not available.
+    def prepare_data(self, length=10,) -> None:
 
-#         This method checks if the specified dataset is available in the file system.
-#         If not, it downloads and extracts the dataset into the appropriate directory.
+        """Download the dataset if not available.
 
-#         Example:
-#             Assume the dataset is not available on the file system.
-#             Here's how the directory structure looks before and after calling the
-#             `prepare_data` method:
+        This method checks if the specified dataset is available in the file system.
+        If not, it downloads and extracts the dataset into the appropriate directory.
 
-#             Before:
+        Example:
+            Assume the dataset is not available on the file system.
+            Here's how the directory structure looks before and after calling the
+            `prepare_data` method:
 
-#             .. code-block:: bash
+            Before:
 
-#                 $ tree datasets
-#                 datasets
-#                 ├── dataset1
-#                 └── dataset2
+            .. code-block:: bash
 
-#             Calling the method:
+                $ tree datasets
+                datasets
+                ├── dataset1
+                └── dataset2
 
-#             .. code-block:: python
+            Calling the method:
 
-#                 >> datamodule = MVTec(root="./datasets/MVTec", category="bottle")
-#                 >> datamodule.prepare_data()
+            .. code-block:: python
 
-#             After:
+                >> datamodule = MVTec(root="./datasets/MVTec", category="bottle")
+                >> datamodule.prepare_data()
 
-#             .. code-block:: bash
+            After:
 
-#                 $ tree datasets
-#                 datasets
-#                 ├── dataset1
-#                 ├── dataset2
-#                 └── MVTec
-#                     ├── bottle
-#                     ├── ...
-#                     └── zipper
-#         """
-#         if (self.root / self.category).is_dir():
-#             logger.info("Found the dataset.")
-#         else:
-#             download_and_extract(self.root, DOWNLOAD_INFO)
+            .. code-block:: bash
+
+                $ tree datasets
+                datasets
+                ├── dataset1
+                ├── dataset2
+                └── MVTec
+                    ├── bottle
+                    ├── ...
+                    └── zipper
+        """
+        print(f"prepare all white anomaly data for testing in wildType")
+        for phase in ("train", "val", "test"):
+            for l in range(length):
+                img_path = f"{self.root}/wildType/{phase}/anomaly/{l:0=3}.png"
+                msk_path = f"{self.root}/wildType/ground_truth/anomaly/{l:0=3}_mask.png"
+                gen_anomalous(img_path, msk_path, size=(600,600,),)
+
+            img_dir = Path(f"{self.root}/wildType/{phase}/good")
+            msk_dir = Path(f"{self.root}/wildType/ground_truth/good")
+            img_names = [str(p.stem) for p in img_dir.iterdir() if p.is_file()]
+            msk_paths = [str(msk_dir.joinpath(n+"_mask.png")) for n in img_names]
+            for p in msk_paths:
+                gen_mask(p)
+
+def gen_anomalous(img_path, msk_path, size=(600,600,),):
+    img = Image.fromarray(np.ones(size, dtype=np.uint8)*255)
+    msk = Image.fromarray(np.ones(size, dtype=np.uint8)*255)
+    img.save(img_path)
+    msk.save(msk_path)
+
+def gen_mask(msk_path, size=(600,600,),):
+    msk = Image.fromarray(np.zeros(size, dtype=np.uint8))
+    msk.save(msk_path)
 
 
 class WDDD2_AD_DS(AnomalibDataset):
@@ -463,13 +483,6 @@ def make_WDDD2_dataset(
 
     return samples
 
-def gen_anomalous(img_path, msk_path, size=(600,600,),):
-    img = Image.fromarray(np.ones(size, dtype=np.uint8))
-    msk = Image.fromarray(np.ones(size, dtype=np.uint8))
-    img.save(img_path)
-    msk.save(msk_path)
-
-
 def _add_anomalous(samples: DataFrame, length: int=10) -> DataFrame:
     """ add some anomalous samples for AUROC or F1 Metric CallBack
 
@@ -544,19 +557,18 @@ class YouTransform:
         - https://pytorch.org/vision/main/auto_examples/transforms/plot_custom_transforms.html
 
     """
-    def __init__(self, mean_list, alpha=50) -> None:
+    def __init__(self, mean, alpha=50) -> None:
         self.alpha = alpha
-        self.mean_list = mean_list
+        self.mean = mean
 
 
     def __call__(self, x, idx):
-        x = x.to('cpu').detach().numpy().copy()
+        # x = x.to('cpu').detach().numpy().copy()
 
-        # You Transform with numpy
-        I_mean = self.get_image_mean(x) if self.mean_list[idx] is None else self.mean_list[idx]
-        x = np.arctan((x - I_mean) / I_mean) * self.alpha + I_mean 
+        I_mean = self.get_image_mean(x) if self.mean is None else self.mean
+        x = torch.atan((x - I_mean) / I_mean) * self.alpha + I_mean 
 
-        x = torch.from_numpy(x.astype(np.float32)).clone()
+        # x = torch.from_numpy(x.astype(np.float32)).clone()
         return x
 
 
@@ -723,21 +735,13 @@ if __name__ == "__main__":
                         interpolation=v2.InterpolationMode.BILINEAR
                     ),
                     v2.ToDtype(torch.float32, scale=True),
-                    # mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-                    # v2.Normalize(mean=[0.485], std=[0.229]),
-                    # YouTransform(examples["mean"], alpha=0.2, )
+                    # YouTransform(0.1772, alpha=0.2, ),
+                    # v2.Normalize(mean=[0.1772], std=[0.0328]), # This brakes [-1,1]
+                    v2.Normalize(mean=[0.485], std=[0.229]),
                 ]) 
 
     # root = "/home/skazuki/data/WDDD2_AD" 
     root = "/mnt/e/WDDD2_AD"
-
-    length=10
-    for phase in ("train", "val", "test"):
-        for l in range(length):
-            img_path = f"{root}/wildType/{phase}/anomaly/{l:0=3}.png"
-            msk_path = f"{root}/wildType/ground_truth/anomaly/{l:0=3}_mask.png"
-            gen_anomalous(img_path, msk_path, size=(600,600,),)
-     
 
     datamodule = WDDD2_AD(
         root = root,  
@@ -751,15 +755,20 @@ if __name__ == "__main__":
         image_size = (256,256),
         transform = transforms,
         seed  = 44,
-        debug =True, 
+        # debug =True, 
+        debug =False, 
         debug_data_ratio =0.01, 
-        add_anomalous = True, # False, 
+        add_anomalous = False, 
     )
     print("prepareing datamodule...")
+    # datamodule.prepare_data()
     datamodule.setup()
 
 
     # "train_data", "val_data", "test_data"
+    count = 0
+    mean = 0
+    std = 0
     for attribute in ("train_data", "val_data", "test_data"):
         data_loader = getattr(datamodule,attribute)
         print(f"total iterations: {len(data_loader)}")
@@ -769,7 +778,19 @@ if __name__ == "__main__":
         print(batch["image_path"])
         print(batch["label"])
         print(batch["image"].shape)
-        print(batch["image"].shape)
+        print(batch["image"].dtype)
+        print(batch["image"].min())
+        print(batch["image"].max())
         print()
+        # for batch in data_loader:
+        #     if batch["label"] == 1:
+        #         continue
+        #     x = batch["image"]
+        #     mean += torch.mean(x)
+        #     std += torch.std(x)
+        #     count += 1
 
 
+    # print(f"{mean/count=}, {std/count=}")
+    # mean/count=tensor(0.1771), std/count=tensor(0.0322)
+    # mean/count=tensor(0.1772), std/count=tensor(0.0328)

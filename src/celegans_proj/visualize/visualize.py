@@ -79,13 +79,13 @@ class WDDD2AnomalyDetectionResultVisualizer:
             # Get kotai_dict and kotai_score_dict
             # kotai_dict {kotai_name: [img_name1, img_name1, ... ] }
             # kotai_score_dict {kotai_name: [pred_score1, pred_score2, ... ] }
-            try:
-                with open(str(in_dir.joinpath("kotai_dict.pickle")), "rb") as f:
-                    kotai_dict = pickle.load(f)
-                with open(str(in_dir.joinpath("kotai_score_dict.pickle")), "rb") as f:
-                    kotai_score_dict = pickle.load(f)
-            except:
-                kotai_dict, kotai_score_dict = WDDD2AnomalyDetectionResultVisualizer._build_kotai_score_dict(
+            # try:
+            #     with open(str(in_dir.joinpath("kotai_dict.pickle")), "rb") as f:
+            #         kotai_dict = pickle.load(f)
+            #     with open(str(in_dir.joinpath("kotai_score_dict.pickle")), "rb") as f:
+            #         kotai_score_dict = pickle.load(f)
+            # except:
+            kotai_dict, kotai_score_dict = WDDD2AnomalyDetectionResultVisualizer._build_kotai_score_dict(
                                                     in_dir,
                                                     self.anomalyKinds,
                                                 )
@@ -115,6 +115,7 @@ class WDDD2AnomalyDetectionResultVisualizer:
             self.detectionScore_for_each_kotai(
                 kotai_dict,
                 kotai_score_dict,
+                seijou_kotai_name_list, seijou_kotai_score_list,
                 out_dir,
                 thresh_p, thresh_m,
             )
@@ -425,6 +426,7 @@ class WDDD2AnomalyDetectionResultVisualizer:
         self,
         kotai_dict,
         kotai_score_dict,
+        seijou_kotai_name_list, seijou_kotai_score_list,
         out_dir,
         thresh_p, thresh_m,
     ):
@@ -433,9 +435,11 @@ class WDDD2AnomalyDetectionResultVisualizer:
 
         detection_dict = dict()
         for kotai_name, scores in kotai_score_dict.items():
+            # if kotai_name in seijou_kotai_name_list:
+            #     continue
             kinds_dict = defaultdict(list)
             for idx, score in enumerate(scores):
-                if score >= thresh_p or score <= thresh_p:
+                if score >= thresh_p or score <= thresh_m:
                     kinds_dict["anomaly_idx"].append(idx)
                     kinds_dict["anomaly_score"].append(score)
                 else:
@@ -518,6 +522,7 @@ class WDDD2AnomalyDetectionResultVisualizer:
                 for pred_dict in tqdm(predictions):
                     for img_path, pred_score in zip(pred_dict['image_path'], pred_dict['pred_scores']):
                         pred_score = pred_score.tolist()
+                        pred_score = 1 - pred_score # for adjust PSNR anomaly metric
                         [base_dir, filename, suffix] = WDDD2FileNameUtil.strip_path(img_path)
                         [kotai_kind, kotai_name, T, Z,] = WDDD2FileNameUtil.strip_name(filename)
 
@@ -565,13 +570,12 @@ if __name__ == "__main__":
 
     logging.basicConfig(filename='./logs/debug.log', filemode='w', level=logging.DEBUG)
 
-    exp_name = "exp_20241209_predict"
+    exp_name = "exp_example_Patchcore_ReverseDistilation_predict"
     model_names = ["Patchcore", "ReverseDistillation"]
     # model_names = ["SimSID"]
 
-    # base_dir = Path("/home/skazuki/playground/CaenorhabditisElegans_AnomalyDetection_Dataset/results/")
-    base_dir = Path("/home/skazuki/skazuki/result/")
-    # base_dir = Path("/mnt/c/Users/compbio/Desktop/shimizudata/")
+    # base_dir = Path("/home/skazuki/skazuki/result/")
+    base_dir = Path("/mnt/c/Users/compbio/Desktop/shimizudata/exp_server/")
 
     visualize(
         in_dir = str(base_dir),
