@@ -4,6 +4,7 @@ from torch import nn
 import torch.nn.functional as F
 from torchvision.transforms import v2
 from torchmetrics.functional.image import (
+    peak_signal_noise_ratio as PSNR,
     multiscale_structural_similarity_index_measure  as ms_ssim,
     learned_perceptual_image_patch_similarity as lpips,
 )
@@ -66,22 +67,19 @@ class MyLoss(nn.Module):
 
 
         loss = self.loss_image_weight * self.compute_recon_loss(
-            outputs['pred_imgs'], outputs['image'], perceptual="ssim")
+            outputs['pred_imgs'], outputs['image'], 
+            perceptual="ms_ssim",# "lpips",
+        )
 
-        # mask_entropy = self.fmt_segMask2entropy(
-        #     outputs['mask'].to(torch.long), # (1,256,256) -> (1,1,256,256)
-        #     num_class = len(outputs['mask'].unique().tolist())# +1,
-        # )
-        # print(f"{outputs['anomaly_maps'].shape=}\t{outputs['mask'].shape=}{mask_entropy.shape=}")
-        # loss += self.loss_image_weight * self.compute_recon_loss(
+        # loss += self.loss_image_weight * self.ce_loss(
         #     outputs['anomaly_maps'],   
-        #     mask_entropy,
+        #     outputs['mask'].to(torch.long),
         #  )
 
-        # loss += self.loss_image_weight * self.compute_recon_loss(
-        #     outputs['pred_scores'], 
-        #     outputs['label'],
-        #  )
+        loss += self.loss_image_weight * self.compute_recon_loss(
+            outputs['pred_scores'], 
+            outputs['label'],
+         )
 
         if "vae" in self.train_models \
             and "diffusion" in self.train_models:
@@ -96,20 +94,20 @@ class MyLoss(nn.Module):
             loss += self.loss_gen_weight * self.compute_recon_loss(
                 outputs['gen_latents'], outputs['latents'], )
 
-            # loss += self.loss_emb_weight * self.compute_embedding_loss(
-            #     outputs['gen_latents'], outputs['latents'],)
-            # loss += self.loss_emb_weight * self.compute_embedding_loss(
-            #     outputs['pred_latents'], outputs['latents'],)
+            loss += self.loss_emb_weight * self.compute_embedding_loss(
+                outputs['gen_latents'], outputs['latents'],)
+            loss += self.loss_emb_weight * self.compute_embedding_loss(
+                outputs['pred_latents'], outputs['latents'],)
 
-            # loss += self.loss_mask_weight * self.compute_divergence_loss(
-            #     outputs['KL_THRESHOLDS'], outputs['gen_KL_THRESHOLDS'], )
+            loss += self.loss_mask_weight * self.compute_divergence_loss(
+                outputs['KL_THRESHOLDS'], outputs['gen_KL_THRESHOLDS'], )
+
+            loss += self.loss_kl_weight * outputs['posterior'].kl().mean()# kl loss
 
             # loss += self.loss_mask_weight * self.compute_segmentation_loss(
             #     outputs['pred_masks'], outputs['seg_masks'], )
             # loss += self.loss_mask_weight * self.compute_recon_loss(
             #     outputs['pred_masks'], outputs['gen_masks'], )
-
-            # loss += self.loss_kl_weight * outputs['posterior'].kl().mean()# kl loss
 
         elif "diffusion" in self.train_models:
             loss += self.loss_latent_weight * self.compute_recon_loss(
@@ -219,7 +217,7 @@ class MyLoss(nn.Module):
         return classes 
 
     @staticmethod
-    def fmt_segMask2entropy(mask, num_class=5, eps=1e-10):
+    def fmt_segMask2entropy(mask, num_class=5, eps=1e-100):
 
         mask_one_hot = F.one_hot(mask.squeeze(1), num_classes=num_class)
         # Convert from NHWC to NCHW
@@ -248,6 +246,7 @@ class MyLoss(nn.Module):
 
         if perceptual=="ssim":
             loss += 1 - ms_ssim(pred, target, data_range=1.0)
+
         elif perceptual=="lpips":
             if pred.shape[1] == 1:
                 pred = MyLoss.cvt_channel_gray2RGB(pred)

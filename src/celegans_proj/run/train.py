@@ -137,11 +137,7 @@ def train(
                         ),
                         v2.ToDtype(torch.float32, scale=True),
                         # TODO: YouTransform
-                        v2.Normalize(mean=[0.485], std=[0.229]),
-                        # v2.Normalize(
-                        #     mean=[0.485, 0.456, 0.406], 
-                        #     std=[0.229, 0.224, 0.225],
-                        # ),
+                        # v2.Normalize(mean=[0.485], std=[0.229]),
                     ]) 
     # Initialize the datamodule, model and engine
 
@@ -191,7 +187,7 @@ def train(
     print(f"{type(batch['image_path'])=}\t{batch['image_path']=}")
     print(f"{type(batch['label'])=}\t{batch['label']=}")
     print(f"{type(batch['image'])=}\t{batch['image'].shape=}")
-    print(f"{type(batch['mask'])=}\t{batch['mask'].shape=}")
+    print(f"{type(batch['mask'])=}\t{batch['mask'].shape=}\t{len(batch['mask'].unique().tolist())=}")
     print()
 
     print("prepareing model")
@@ -253,8 +249,6 @@ if __name__ == "__main__":
 
     logging.basicConfig(filename='./logs/debug.log', filemode='w', level=logging.DEBUG)
 
-    # exp_name  = "exp_example"
-    # exp_name  = "exp_20241211"
     exp_name  = "exp_20241213"
 
     dataset_name = "WDDD2_AD"
@@ -276,9 +270,9 @@ if __name__ == "__main__":
     pixel_metrics = ['AUROC']
 
     # ckpt=None
-    # ckpt = f"{out_dir}/exp_20241213/models/epoch=15.ckpt"
-    version = "latest"# "v0" # 
-    ckpt = f"{out_dir}/{exp_name}/{model_name}/{dataset_name}/{target_data}/{version}/weights/lightning/model.ckpt"
+    ckpt = f"{out_dir}/exp_20241213/models/epoch=50.ckpt"
+    # version = "latest"# "v0" # 
+    # ckpt = f"{out_dir}/{exp_name}/{model_name}/{dataset_name}/{target_data}/{version}/weights/lightning/model.ckpt"
 
     logger = WandbLogger(
         project =f"{exp_name}",
@@ -300,14 +294,15 @@ if __name__ == "__main__":
         pixel_metrics = pixel_metrics,
 
 
-        learning_rate  = 1e-4,
+        learning_rate  = 1e-1,
         ckpt = ckpt, 
         resolution =  256,
         task = TaskType.SEGMENTATION, #CLASSIFICATION,#
-        worker = 16,# 30,
+        worker = 16,
         seed  =  44,
-        batch = 16, # 2, #
-        debug = False, #True, #
-        debug_data_ratio = 0.08, 
+        batch = 12, # 2, #
+        debug = False, #
+        # debug = True, #
+        debug_data_ratio = 0.10, 
     )
 

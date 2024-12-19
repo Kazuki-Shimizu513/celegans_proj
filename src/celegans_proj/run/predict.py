@@ -109,11 +109,7 @@ def predict(
                         v2.ToDtype(torch.float32, scale=True),
                         # TODO: YouTransform
                         v2.Normalize(mean=[0.485], std=[0.229]),
-                        # v2.Normalize(
-                        #     mean=[0.485, 0.456, 0.406], 
-                        #     std=[0.229, 0.224, 0.225],
-                        # ),
-                    ]) 
+                        ]) 
 
 
     datamodule = WDDD2_AD(
@@ -228,7 +224,7 @@ if __name__ == "__main__":
 
 
     # exp_name = "exp_example"
-    exp_name  = "exp_20241211"
+    exp_name  = "exp_20241213"
 
     dataset_name = "WDDD2_AD"
     target_data = "wildType"
@@ -236,11 +232,11 @@ if __name__ == "__main__":
 #     dataset_name  = "MVTec"
 #     target_data = "bottle"
 
-    out_dir = Path("/mnt/c/Users/compbio/Desktop/shimizudata/exp_server/")
-    in_dir = Path(f"/mnt/e/{dataset_name}")
+    # out_dir = Path("/mnt/c/Users/compbio/Desktop/shimizudata/exp_server/")
+    # in_dir = Path(f"/mnt/e/{dataset_name}")
 
-    # out_dir = Path("/home/skazuki/result")
-    # in_dir = Path(f"/home/skazuki/data/{dataset_name}")
+    out_dir = Path("/home/skazuki/result")
+    in_dir = Path(f"/home/skazuki/data/{dataset_name}")
 
     log_dir  = Path("./logs")
     # model_names = [ "Patchcore",  "ReverseDistillation",]
@@ -264,10 +260,11 @@ if __name__ == "__main__":
                 save_dir = str(log_dir),
             )
 
-            ckpt_path  = out_dir.joinpath(f"{exp_name}/{model_name}/{dataset_name}/wildType/{version}/weights/lightning/model.ckpt")
+            ckpt_path  = out_dir.joinpath(f"{exp_name}/models/epoch=50.ckpt")
+            # {model_name}/{dataset_name}/wildType/{version}/weights/lightning/model.ckpt")
 
             predict(
-                exp_name =f"{exp_name}_predict",
+                exp_name =f"{exp_name}/predict",
                 out_dir = out_dir,
                 in_dir =  in_dir,
                 model_name = model_name, 
@@ -283,8 +280,8 @@ if __name__ == "__main__":
                 task = TaskType.SEGMENTATION, #CLASSIFICATION,#
                 worker = 16,
                 seed=44,
-                batch = 1,
-                debug = True,# False,
+                batch = 300,
+                debug =  False,# True,#
                 debug_data_ratio = 0.1,
             )
 

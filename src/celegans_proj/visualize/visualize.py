@@ -570,12 +570,13 @@ if __name__ == "__main__":
 
     logging.basicConfig(filename='./logs/debug.log', filemode='w', level=logging.DEBUG)
 
-    exp_name = "exp_example_Patchcore_ReverseDistilation_predict"
-    model_names = ["Patchcore", "ReverseDistillation"]
+    exp_name = "exp_20241213/predict"
+    # model_names = ["Patchcore", "ReverseDistillation"]
     # model_names = ["SimSID"]
+    model_names = ["MyModel"]
 
-    # base_dir = Path("/home/skazuki/skazuki/result/")
-    base_dir = Path("/mnt/c/Users/compbio/Desktop/shimizudata/exp_server/")
+    base_dir = Path("/home/skazuki/result/")
+    # base_dir = Path("/mnt/c/Users/compbio/Desktop/shimizudata/exp_server/")
 
     visualize(
         in_dir = str(base_dir),
@@ -584,5 +585,5 @@ if __name__ == "__main__":
         dataset_name = "WDDD2_AD",
         model_names = model_names, 
         mode = "pseudoAnomaly",
-        anomalyKinds = ['wildType', 'gridBlack', 'patchBlack', 'zoom', 'shrink', 'oneCell'],
+        anomalyKinds = ['wildType', 'patchBlack', 'zoom', 'shrink', 'oneCell'], # 'gridBlack',
     )

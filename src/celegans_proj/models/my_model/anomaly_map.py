@@ -8,6 +8,7 @@ from torch.nn import functional as F
 from torchmetrics.functional.image import (
     peak_signal_noise_ratio as PSNR,
     multiscale_structural_similarity_index_measure as ms_ssim,
+    learned_perceptual_image_patch_similarity as lpips,
 )
 from torchmetrics.functional.segmentation import mean_iou
 
@@ -31,7 +32,7 @@ class AnomalyMapGenerator(nn.Module):
         # image = self.cvt_channel_gray2RGB(outputs["image"])
         recon_dist = self.compute_recon_distance(
                         outputs["pred_imgs"],  outputs["image"],# image,# 
-                        mode = "L2", 
+                        mode = "L1", 
                       )
 
         # seg_dist = self.compute_segmentation_distance(
@@ -40,17 +41,16 @@ class AnomalyMapGenerator(nn.Module):
         #                 mode = "cosine", 
         #               )
         # anomaly_maps = (recon_dist + seg_dist) / 2 
-
         anomaly_maps = recon_dist
-        anomaly_maps = self.min_max_scaling(anomaly_maps)
 
+        anomaly_maps = self.min_max_scaling(anomaly_maps)
         # print(f"{anomaly_maps.shape=}{anomaly_maps.min()=}{anomaly_maps.max()=}")
 
         pred_scores = self.compute_metrics(
                         outputs["pred_imgs"], outputs["image"], # image,# 
                         outputs['pred_masks'], outputs['gen_masks'], 
                         anomaly_maps, 
-                        mode=None,
+                        mode="ms_ssim",# None,#"lpips",  
         )
 
         return anomaly_maps, pred_scores 
@@ -155,13 +155,26 @@ class AnomalyMapGenerator(nn.Module):
                 scores.append(score)
         elif mode == "ms_ssim":
             for pred, img in zip(pred_imgs, imgs):
+                pred , img = pred.unsqueeze(0), img.unsqueeze(0)
                 score = ms_ssim(pred, img, data_range=1.0)
+                scores.append(score)
+        elif mode=="lpips":
+            for pred, img in zip(pred_imgs, imgs):
+                pred , img = pred.unsqueeze(0), img.unsqueeze(0)
+                if pred.shape[1] == 1:
+                    pred = self.cvt_channel_gray2RGB(pred)
+                    img = self.cvt_channel_gray2RGB(img)
+                score = lpips(pred, img, 
+                          net_type='squeeze', 
+                          normalize=True,
+                        )
                 scores.append(score)
         else:
             for ano_map in anomaly_maps:
                 score = torch.max(ano_map)
                 scores.append(score)
         scores = torch.stack(scores, dim=0)
+
         # print(f"recon  value : {scores},\n\t{scores.shape=}{scores.device=}")
 
         # Calc segmentation metrics
@@ -187,7 +200,7 @@ class AnomalyMapGenerator(nn.Module):
     @staticmethod
     def calc_meanIoU(pred, gen, ):
         if pred.shape[1] >= gen.shape[1]:
-            num_classes = pred.flatten().unique().size(dim=0)# .item()
+            num_classes = pred.flatten().unique().size(dim=0)# .item() # TODO::fix error
         else:
             num_classes = gen.flatten().unique().size(dim=0)# .item()
 

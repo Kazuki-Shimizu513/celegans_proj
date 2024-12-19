@@ -737,11 +737,11 @@ if __name__ == "__main__":
                     v2.ToDtype(torch.float32, scale=True),
                     # YouTransform(0.1772, alpha=0.2, ),
                     # v2.Normalize(mean=[0.1772], std=[0.0328]), # This brakes [-1,1]
-                    v2.Normalize(mean=[0.485], std=[0.229]),
+                    # v2.Normalize(mean=[0.485], std=[0.229]),
                 ]) 
 
-    # root = "/home/skazuki/data/WDDD2_AD" 
-    root = "/mnt/e/WDDD2_AD"
+    root = "/home/skazuki/data/WDDD2_AD" 
+    # root = "/mnt/e/WDDD2_AD"
 
     datamodule = WDDD2_AD(
         root = root,  
@@ -761,7 +761,7 @@ if __name__ == "__main__":
         add_anomalous = False, 
     )
     print("prepareing datamodule...")
-    # datamodule.prepare_data()
+    datamodule.prepare_data()
     datamodule.setup()
 
 

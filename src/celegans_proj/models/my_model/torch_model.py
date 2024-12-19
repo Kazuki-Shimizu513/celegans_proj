@@ -645,7 +645,7 @@ class MyTorchModel(nn.Module):
                                           device=latents.device,).long()
             noisy_latents = self.pipe.scheduler.add_noise(latents, noises, timesteps)
         else:
-            steps = 10 if self.ddpm_num_steps > 10 else self.ddpm_num_steps
+            steps = self.ddpm_num_steps # 10 if self.ddpm_num_steps > 10 else self.ddpm_num_steps
             timesteps = torch.tensor([steps-1] * len(latents))
             noisy_latents = latents.clone()
         pred_noises = torch.zeros_like(noises)
@@ -737,8 +737,8 @@ class MyTorchModel(nn.Module):
 
         # parts segmentation
         if self.training_mask:
-            # KL_THRESHOLDS = self.DiffSegParamModel(latents)  
-            KL_THRESHOLDS = torch.tensor([[0.9]*4] * latents.shape[0], device=self.device) 
+            # KL_THRESHOLDS = torch.tensor([[0.9]*4] * latents.shape[0], device=self.device) 
+            KL_THRESHOLDS = self.DiffSegParamModel(latents)  
             pred_masks = self.segment_with_attn_maps(net_attn_maps,KL_THRESHOLDS,path, store=True, title = 'pred')
         else:
             KL_THRESHOLDS = torch.tensor([[0.9]*4] * latents.shape[0], device=self.device) 
@@ -782,8 +782,8 @@ class MyTorchModel(nn.Module):
 
         # parts segmentation
         if self.training_mask:
-            # gen_KL_THRESHOLDS = self.DiffSegParamModel(gen_latents)  
-            gen_KL_THRESHOLDS = torch.tensor([[0.9]*4] * latents.shape[0], device=self.device) 
+            # gen_KL_THRESHOLDS = torch.tensor([[0.9]*4] * latents.shape[0], device=self.device) 
+            gen_KL_THRESHOLDS = self.DiffSegParamModel(gen_latents)  
             gen_masks = self.segment_with_attn_maps(gen_attn_maps,gen_KL_THRESHOLDS,path, store=True, title = 'gen')
         else:
             gen_KL_THRESHOLDS = torch.tensor([[0.9]*4] * latents.shape[0], device=self.device) 
