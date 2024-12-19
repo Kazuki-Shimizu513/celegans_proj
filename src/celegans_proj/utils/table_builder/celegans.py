@@ -19,8 +19,8 @@ import numpy as np
 
 
 
-from caenorhabditiselegans_anomalydetection_dataset.utils.table_builder.base import BaseTableBuilder
-from caenorhabditiselegans_anomalydetection_dataset.utils.file_import import  WDDD2FileNameUtil
+from celegans_proj.utils.table_builder.base import BaseTableBuilder
+from celegans_proj.utils.file_import import  WDDD2FileNameUtil
 
 logger = logging.getLogger(__name__)
 
