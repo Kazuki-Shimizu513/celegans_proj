@@ -218,6 +218,7 @@ pillow==11.0.0
     # via imageio
     # via imgaug
     # via matplotlib
+    # via readlif
     # via scikit-image
     # via torchvision
 platformdirs==4.3.6
@@ -259,6 +260,8 @@ pyyaml==6.0.2
     # via timm
     # via transformers
     # via wandb
+readlif==0.6.5
+    # via celegans-proj
 regex==2024.9.11
     # via diffusers
     # via open-clip-torch

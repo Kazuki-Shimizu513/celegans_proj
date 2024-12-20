@@ -4,7 +4,7 @@
 import logging
 from tqdm import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
-
+import re
 
 import os
 from typing import Union
@@ -176,6 +176,7 @@ class WildTypeCelegansTableBuilder(BaseTableBuilder):
                     # Z check
                     [base_dir, filename, suffix] = WDDD2FileNameUtil.strip_path(p)
                     [kotai_kind, kotai_name, T, Z,] = WDDD2FileNameUtil.strip_name(filename)
+
                     if not (self.Z_range[0] <= int(Z) and self.Z_range[1] >= int(Z)):
                         continue
 
@@ -217,6 +218,7 @@ class RNAiCelegansTableBuilder(WildTypeCelegansTableBuilder):
         in_path: Union[ str | os.PathLike ] = Path('~/WDDD2/TIF_GRAY'), 
         out_path: Union[ str | os.PathLike ] = Path('~/WDDD2_AD/meta_data/datatable'), 
         h5_path: Union[ str | os.PathLike ] = Path("~/WDDD2/BD5"),
+        orf_list: Sequence[str] =["C53D5.a", "C29E4.8"],
         Z_range :tuple =  (33, 40),
         T_cellStage : Sequence[int] = (2, ),
         shuffle: bool = False,
@@ -232,12 +234,14 @@ class RNAiCelegansTableBuilder(WildTypeCelegansTableBuilder):
             shuffle= shuffle,
             random_seed = random_seed,
         )
+        self.orf_list = orf_list
 
     def __call__(
         self,
     ) -> None:
         df_test = self.build_table()
-        self.save_df2csv(df_test , "RNAi_test",)
+        name = f"RNAi_{"_".join(self.orf_list)}_test"
+        self.save_df2csv(df_test , name,)
 
     def build_table(
         self, 
@@ -258,6 +262,7 @@ class RNAiCelegansTableBuilder(WildTypeCelegansTableBuilder):
 
         # 1. get all (wildytpe) kotai_dir path 
         kotai_list = self.get_kotai_list(only=["RNAi"])
+        kotai_list = [kotai for kotai in kotai_list if re.search("|".join(self.orf_list), kotai)]
 
         logger.debug(
             f'{kotai_list=}\n'

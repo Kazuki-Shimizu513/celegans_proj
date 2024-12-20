@@ -29,7 +29,10 @@ import numpy as np
 # import tifffile
 # import h5py
 
-from caenorhabditiselegans_anomalydetection_dataset.utils.table_builder.celegans import WildTypeCelegansTableBuilder, RNAiCelegansTableBuilder
+from celegans_proj.utils.table_builder.celegans import (
+    WildTypeCelegansTableBuilder, 
+    RNAiCelegansTableBuilder,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +48,7 @@ class Transporter:
         split: bool = True , 
         split_ratio: Union[ float | Sequence ] = [24, 1, 8],
         h5_path: Union[ str | os.PathLike ] = Path("./WDDD2/BD5"),
+        orf_list: Sequence[str] =["C53D5.6", "C29E4.8"],
         Z_range :tuple =  (33, 40),
         T_cellStage : Sequence[int] = (2, ),
         shuffle: bool = False,
@@ -78,6 +82,7 @@ class Transporter:
                                     in_path,
                                     self.datatable_path,
                                     h5_path,
+                                    orf_list,
                                     Z_range,
                                     T_cellStage,  
                                     shuffle,
@@ -94,7 +99,7 @@ class Transporter:
         datatable_paths = [p.resolve() for p in self.datatable_path.iterdir() if p.is_file()]
 
         if "WT" in self.transport:
-            trans_kind =  "wildtype_"
+            trans_kind =  "wildtype_"# TODO:: wtでは？
             # 2. buld DataFrame from in_dir via WildTypeCelegansTableBuilder
             wt_paths = [p.resolve() for p in datatable_paths if (trans_kind  in p.stem)]
             if  len(wt_paths) == 0 :
@@ -110,8 +115,8 @@ class Transporter:
             trans_kind = "RNAi_"
             # 2. buld DataFrame from in_dir via RNAiCelegansTableBuilder
             RNAi_paths = [p.resolve() for p in datatable_paths if (trans_kind in p.stem)]
-            if  len(RNAi_paths) == 0 :
-                self.RNAi_table_builder()
+            # if  len(RNAi_paths) == 0 :
+            self.RNAi_table_builder()
             # 3. transfer (copy) to WDDD2_AD dataset
             self.transfer(
                 RNAi_paths,
@@ -204,6 +209,7 @@ class Transporter:
             for df_path in tqdm(df_paths):
                 if str(df_path.suffix) != '.csv':
                     continue
+                print(df_path)
                 df = pd.read_csv(df_path)
 
                 logger.debug(
@@ -211,11 +217,15 @@ class Transporter:
                 )
 
                 # copy H5 files
-                h5_list = df['h5_path'].unique()
-                self.copy_files_to_dir(h5_list,BD5_path,) 
+                try:
+                    h5_list = df['h5_path'].unique()
+                    self.copy_files_to_dir(h5_list,BD5_path,) 
+                except:
+                    pass
 
                 # making the out path 
                 kinds = df['kotai_kind'].unique() # 'wildType'
+                print(kinds)
                 self.build_WDDD2_AD_dir_structure(self.out_path, kinds = kinds,)
                 split = df['split'].unique()[0]
 
@@ -262,7 +272,7 @@ class Transporter:
 
 if __name__ == "__main__":
 
-    logging.basicConfig(filename='./debug.log', filemode='w', level=logging.DEBUG)
+    logging.basicConfig(filename='./logs/debug.log', filemode='w', level=logging.DEBUG)
 
     # img_path = '/mnt/d/WDDD2/TIF_GRAY/wt_N2_081113_01/wt_N2_081113_01_T73_Z35.tiff',
     # [base_dir, filename, suffix] = WDDD2FileNameUtil.strip_path(img_path)
@@ -272,18 +282,25 @@ if __name__ == "__main__":
     #     '/mnt/d/WDDD2/BD5/wt_N2_081113_01_bd5.h5', T
     # ) 
 
-    in_data_path = Path('/mnt/d/WDDD2')
-    img_data_path = in_data_path.joinpath('TIF_GRAY')
+    # in_data_path = Path('/mnt/d/WDDD2')
+    # img_data_path = in_data_path.joinpath('TIF_GRAY')
+    # h5_data_path = in_data_path.joinpath('BD5')
+    # out_data_path = Path('/mnt/e/WDDD2_AD')
+
+    in_data_path = Path('/home/skazuki/data/WDDD2_tmp')
+    img_data_path = in_data_path.joinpath('TIFF')
     h5_data_path = in_data_path.joinpath('BD5')
-    out_data_path = Path('/mnt/e/WDDD2_AD')
+    out_data_path = Path('/home/skazuki/data/WDDD2_AD')
+
 
     transporter = Transporter(
         transport = ["RNAi"],
         in_path = img_data_path, 
         out_path = out_data_path, 
         split = True , 
-        split_ratio = [24, 1, 8],
+        split_ratio = [24, 1, 8], # only for wt
         h5_path = h5_data_path,
+        orf_list =["C53D5.a", "C29E4.8"], # imb-3, let-754
         Z_range  =  (33, 40),
         T_cellStage  = (2, ),
         shuffle = False,

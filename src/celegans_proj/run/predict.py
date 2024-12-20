@@ -165,7 +165,7 @@ def predict(
             learning_rate = 1e-8,
             train_models=["vae", "diffusion", ],
             training = True,
-            training_mask = False,#True,
+            training_mask = True,
             out_path = str(out_dir),
         )
  
@@ -221,6 +221,13 @@ if __name__ == "__main__":
                             "shrink",
                             "oneCell",
                         ]
+    anomaly_gene_list  = [
+                            "wildType",
+                            # "F10E9.8", # sas-4
+                            # "F54E7.3", # par-3
+                            "C53D5.a", # imb-3
+                            "C29E4.8", # let-754
+                        ]
 
 
     # exp_name = "exp_example"
@@ -250,7 +257,8 @@ if __name__ == "__main__":
 
     version = "v1" # "latest"
 
-    for kind in pseudo_anomaly_modes :
+    # for kind in pseudo_anomaly_modes :
+    for kind in anomaly_gene_list :
 
         for model_name in  model_names :
 
@@ -261,10 +269,10 @@ if __name__ == "__main__":
             )
 
             ckpt_path  = out_dir.joinpath(f"{exp_name}/models/epoch=50.ckpt")
-            # {model_name}/{dataset_name}/wildType/{version}/weights/lightning/model.ckpt")
+            # ckpt_path  = out_dir.joinpath(f"{exp_name}/{model_name}/{dataset_name}/wildType/{version}/weights/lightning/model.ckpt")
 
             predict(
-                exp_name =f"{exp_name}/predict",
+                exp_name =f"{exp_name}/predict_rnai",
                 out_dir = out_dir,
                 in_dir =  in_dir,
                 model_name = model_name, 
@@ -280,7 +288,7 @@ if __name__ == "__main__":
                 task = TaskType.SEGMENTATION, #CLASSIFICATION,#
                 worker = 16,
                 seed=44,
-                batch = 300,
+                batch = 10,
                 debug =  False,# True,#
                 debug_data_ratio = 0.1,
             )

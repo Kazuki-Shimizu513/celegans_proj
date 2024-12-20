@@ -55,8 +55,8 @@ class WDDD2FileNameUtil:
             kind = kotai_name_el[1]
         elif kotai_name_el[0]== "RNAi":
             kind = kotai_name_el[1]
-        else:
-            kind = kotai_name_el[0]
+        elif kotai_name_el[0]== "wt":
+            kind = "wildType"# kotai_name_el[0]
         return kind 
 
     @staticmethod
@@ -66,49 +66,46 @@ class WDDD2FileNameUtil:
     ) -> str:
         # open BD5 in read mode and acccess cell stage via T, Z 
         # f: data/{TimePoint}/object/ 
-        with  h5py.File(h5_path ,"r") as f:
+        try:
+            with  h5py.File(h5_path ,"r") as f:
+                try:
+                    H5_dataset = f[f'data/{str(T)}/object/0']
 
-            try:
-                H5_dataset = f[f'data/{str(T)}/object/0']
+                    # e.g)
+                    # np.void(
+                    #    (b'76001', b'76', b'line', 11, b'366', b'354', b'28', b'AB'), 
+                    #    dtype={
+                    #       'names': ['ID', 't', 'entity', 'sID', 'x', 'y', 'z', 'label'], 
+                    #       'formats': ['S128', 'S32', 'S128', '<i4', 'S32', 'S32', 'S32', 'S128'], 
+                    #       'offsets': [0, 128, 160, 288, 292, 324, 356, 420], 
+                    #       'itemsize': 548i
+                    #   }
+                    # ),
+                    # via,
+                    # H5_dataset = list(H5_dataset)
+                    H5_dataset = np.array(H5_dataset)
 
-                # e.g)
-                # np.void(
-                #    (b'76001', b'76', b'line', 11, b'366', b'354', b'28', b'AB'), 
-                #    dtype={
-                #       'names': ['ID', 't', 'entity', 'sID', 'x', 'y', 'z', 'label'], 
-                #       'formats': ['S128', 'S32', 'S128', '<i4', 'S32', 'S32', 'S32', 'S128'], 
-                #       'offsets': [0, 128, 160, 288, 292, 324, 356, 420], 
-                #       'itemsize': 548i
-                #   }
-                # ),
-                # via,
-                # H5_dataset = list(H5_dataset)
-                H5_dataset = np.array(H5_dataset)
-
-                # 全部の輪郭座標の細胞名のラベル（np.byte_）
-                # をsetで重複のない名前に集約して，utf-8に変換した．
-                cell_names = set(
-                    map(
-                        lambda x: x.decode('UTF-8'), 
-                        set(H5_dataset[:]['label'])
+                    # 全部の輪郭座標の細胞名のラベル（np.byte_）
+                    # をsetで重複のない名前に集約して，utf-8に変換した．
+                    cell_names = set(
+                        map(
+                            lambda x: x.decode('UTF-8'), 
+                            set(H5_dataset[:]['label'])
+                        )
                     )
-                )
+                except KeyError as e:
+                    cell_names = set()
+        except:
+            cell_names = set(["1", "2"]) # TODO:: FIx this part
 
-            except KeyError as e:
-                # logger.error(
-                #     f"got error {e} and init no cell_name in {h5_path}\t{T}"
-                # )
-                cell_names = set()
-
-            cell_stage = len(cell_names)
-
+        cell_stage = len(cell_names)
         return cell_stage,cell_names
 
     @staticmethod
     def fetch_Ts_from_cellStage(
         BD5_path, # 個体ごと
         in_dir :Union[str | os.PathLike],
-        target_cellStage: int = 1, 
+        target_cellStage: int = 0, 
         Z_range :Sequence[int] = (35,40),
     ) -> Sequence[ str | os.PathLike ]:
         in_dir  = Path(in_dir)
@@ -145,21 +142,36 @@ class WDDD2FileNameUtil:
 
 if __name__ == "__main__":
 
-    logging.basicConfig(filename='./debug.log', filemode='w', level=logging.DEBUG)
+    logging.basicConfig(filename='./logs/debug.log', filemode='w', level=logging.DEBUG)
 
-    img_path = '/mnt/d/WDDD2/TIF_GRAY/wt_N2_081113_01/wt_N2_081113_01_T73_Z35.tiff',
+#     img_path = '/mnt/d/WDDD2/TIF_GRAY/wt_N2_081113_01/wt_N2_081113_01_T73_Z35.tiff',
+#     h5_path = '/mnt/d/WDDD2/BD5/wt_N2_081113_01_bd5.h5'
+
+    data_dir = '/home/skazuki/data/WDDD2'
+    img_path = data_dir + '/TIFF/wt_N2_081113_01/wt_N2_081113_01_T73_Z35.tiff'
+    h5_path = data_dir + '/BD5/wt_N2_081113_01_bd5.h5'
+
+    # data_dir = '/home/skazuki/data/WDDD2_tmp'
+    # img_path = data_dir + '/TIFF/RNAi_C53D5.a_120606_01/RNAi_C53D5.a_120606_01_T73_Z35.tiff'
+    # h5_path = data_dir + '/BD5/RNAi_C53D5.a_120606_01_bd5.h5' # TODO:fix OSerror
+
+
+
     [base_dir, filename, suffix] = WDDD2FileNameUtil.strip_path(img_path)
     [kotai_kind, kotai_name, T, Z,] = WDDD2FileNameUtil.strip_name(filename)
 
-    cell_stage ,cell_names = WDDD2FileNameUtil.get_cellStage(
-        '/mnt/d/WDDD2/BD5/wt_N2_081113_01_bd5.h5', T
-    ) 
+    print(f"{base_dir=},{filename=}, {suffix=}")
+    print(f"{kotai_kind}, {kotai_name}, {T=}, {Z=}")
 
+
+    cell_stage ,cell_names = WDDD2FileNameUtil.get_cellStage(h5_path, T) 
     cell_stage_img_paths = WDDD2FileNameUtil.fetch_Ts_from_cellStage(
-                                '/mnt/d/WDDD2/BD5/wt_N2_081113_01_bd5.h5', 
-                                '/mnt/d/WDDD2/TIF_GRAY/',
-                                target_cellStage = 1, 
+                                h5_path,base_dir, 
+                                target_cellStage = 2, 
                                 Z_range= (35,40),
                             )
+
+    print(f"{cell_stage=},{cell_names=}")
+    print(f"{cell_stage_img_paths}")
 
 
