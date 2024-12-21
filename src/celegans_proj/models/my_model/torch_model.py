@@ -503,14 +503,17 @@ class MyTorchModel(nn.Module):
                 continue
             output[name] = torch.nan_to_num(x, nan=0.0, posinf=1.0, neginf=-1.0)
             if name in [*latent_name, *noise_name,]:
-                output[name] = self.min_max_scaling(x, new_min=-1.0, new_max=1.0)
+                output[name] = torch.clamp(x, min=-1.0, max=1.0)
+                # output[name] = self.min_max_scaling(x, new_min=-1.0, new_max=1.0)
             if name in img_name:
-                output[name] = self.min_max_scaling(x, new_min=0.0, new_max=1.0)
+                output[name] = torch.clamp(x, min=0.0, max=1.0)
+                # output[name] = self.min_max_scaling(x, new_min=0.0, new_max=1.0)
             # print(f"{name}\tshape:{output[name].shape}\trange:{output[name].min().item()}\t{output[name].max().item()}")
 
         for name, param in self.pipe.unet.state_dict().items():
             param = torch.nan_to_num(param, nan=0.0, posinf=1.0, neginf=-1.0)
-            param = self.min_max_scaling(param, new_min=-1.0, new_max=1.0)
+            param = torch.clamp(param, min=-1.0, max=1.0)
+            # param = self.min_max_scaling(param, new_min=-1.0, new_max=1.0)
             self.pipe.unet.state_dict()[name] = param
 
 
@@ -645,7 +648,7 @@ class MyTorchModel(nn.Module):
                                           device=latents.device,).long()
             noisy_latents = self.pipe.scheduler.add_noise(latents, noises, timesteps)
         else:
-            steps =  10 if self.ddpm_num_steps > 10 else self.ddpm_num_steps# self.ddpm_num_steps #
+            steps =  self.ddpm_num_steps #10 if self.ddpm_num_steps > 10 else self.ddpm_num_steps# 
             timesteps = torch.tensor([steps-1] * len(latents))
             noisy_latents = latents.clone()
         pred_noises = torch.zeros_like(noises)

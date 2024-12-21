@@ -570,13 +570,22 @@ if __name__ == "__main__":
 
     logging.basicConfig(filename='./logs/debug.log', filemode='w', level=logging.DEBUG)
 
-    exp_name = "exp_20241213/predict"
+    exp_name = "exp_20241213/predict_rnai"
     # model_names = ["Patchcore", "ReverseDistillation"]
     # model_names = ["SimSID"]
     model_names = ["MyModel"]
 
     base_dir = Path("/home/skazuki/result/")
     # base_dir = Path("/mnt/c/Users/compbio/Desktop/shimizudata/exp_server/")
+    pseudo_anomaly_modes = ['wildType', 'patchBlack', 'zoom', 'shrink', 'oneCell'], # 'gridBlack',
+    anomaly_gene_list  = [
+                            "wildType",
+                            # "F10E9.8", # sas-4
+                            # "F54E7.3", # par-3
+                            "C53D5.a", # imb-3
+                            "C29E4.8", # let-754
+                        ]
+
 
     visualize(
         in_dir = str(base_dir),
@@ -584,6 +593,11 @@ if __name__ == "__main__":
         exp_name = exp_name,
         dataset_name = "WDDD2_AD",
         model_names = model_names, 
-        mode = "pseudoAnomaly",
-        anomalyKinds = ['wildType', 'patchBlack', 'zoom', 'shrink', 'oneCell'], # 'gridBlack',
+
+        mode = "RNAi",
+        anomalyKinds = anomaly_gene_list,
+
+        # mode = "pseudoAnomaly",
+        # anomalyKinds = pseudo_anomaly_modes,
+
     )
