@@ -32,6 +32,7 @@ from pandas import DataFrame
 import torch 
 from torchvision.transforms.v2 import Transform
 from torchvision.transforms import v2
+from tqdm import tqdm
 
 from anomalib import TaskType
 from anomalib.data.base import AnomalibDataset,AnomalibDataModule
@@ -154,7 +155,6 @@ class WDDD2_AD(AnomalibDataModule):
         debug:bool = False, 
         debug_data_ratio:int = 0.1, 
         add_anomalous: bool = False, 
- 
     ) -> None:
         super().__init__(
             train_batch_size=train_batch_size,
@@ -228,8 +228,8 @@ class WDDD2_AD(AnomalibDataModule):
                         ratio =self.debug_data_ratio,
                  )
 
-                if attribute in ("train_data", "val_data",):
-                    subset.samples = _add_anomalous(subset.samples, length=3)
+                # if attribute in ("train_data", "val_data",):
+                #     subset.samples = _add_anomalous(subset.samples, length=3)
 
                 setattr(self, attribute, subset)
 
@@ -290,19 +290,32 @@ class WDDD2_AD(AnomalibDataModule):
                     ├── ...
                     └── zipper
         """
-        print(f"prepare all white anomaly data for testing in wildType")
-        for phase in ("train", "val", "test"):
-            for l in range(length):
-                img_path = f"{self.root}/wildType/{phase}/anomaly/{l:0=3}.png"
-                msk_path = f"{self.root}/wildType/ground_truth/anomaly/{l:0=3}_mask.png"
-                gen_anomalous(img_path, msk_path, size=(600,600,),)
 
-            img_dir = Path(f"{self.root}/wildType/{phase}/good")
-            msk_dir = Path(f"{self.root}/wildType/ground_truth/good")
+        # for phase in ("train", "val", "test"):
+            # for l in range(length):
+            #     if phase == "test":
+            #         continue
+            #     img_path = f"{self.root}/wildType/{phase}/anomaly/{l:0=3}.tiff"
+            #     msk_path = f"{self.root}/wildType/ground_truth/anomaly/{l:0=3}_mask.tiff"
+            #     gen_anomalous(img_path, msk_path, size=(600,600,),)
+
+        print(f"prepare all white anomaly mask for testing in RNAi")
+        for phase in ("test",):# "train", "val", 
+            if self.category=="wildType":
+                continue
+            kind = "good" if self.category == "wildType" else "anomaly" # TODO :: fix mask_path to csv
+            img_dir = Path(f"{self.root}/{self.category}/{phase}/{kind}")
+            msk_dir = Path(f"{self.root}/{self.category}/ground_truth/{kind}")
             img_names = [str(p.stem) for p in img_dir.iterdir() if p.is_file()]
-            msk_paths = [str(msk_dir.joinpath(n+"_mask.png")) for n in img_names]
-            for p in msk_paths:
-                gen_mask(p)
+            msk_paths = [str(msk_dir.joinpath(n+"_mask.tiff")) for n in img_names]
+            for p in tqdm(msk_paths):
+                if Path(p).is_file():
+                    continue
+                if kind=="good":
+                    gen_mask(p)
+                else:
+                    gen_anomaly_mask(p)
+
 
 def gen_anomalous(img_path, msk_path, size=(600,600,),):
     img = Image.fromarray(np.ones(size, dtype=np.uint8)*255)
@@ -313,6 +326,11 @@ def gen_anomalous(img_path, msk_path, size=(600,600,),):
 def gen_mask(msk_path, size=(600,600,),):
     msk = Image.fromarray(np.zeros(size, dtype=np.uint8))
     msk.save(msk_path)
+
+def gen_anomaly_mask(msk_path, size=(600,600,),):
+    msk = Image.fromarray(np.ones(size, dtype=np.uint8)*255)
+    msk.save(msk_path)
+
 
 
 class WDDD2_AD_DS(AnomalibDataset):
@@ -379,8 +397,12 @@ class WDDD2_AD_DS(AnomalibDataset):
         self.root_category = Path(root) / Path(category)
         self.category = category
         self.split = split
-        self.samples = make_WDDD2_dataset(self.root_category, split=self.split, extensions=IMG_EXTENSIONS, add_anomalous = add_anomalous, )
-    
+        self.samples = make_WDDD2_dataset(
+            self.root_category,
+            split=self.split,
+            extensions=IMG_EXTENSIONS,
+            # add_anomalous = add_anomalous,
+        )
 
     def setup(self,):
         pass
@@ -390,7 +412,7 @@ def make_WDDD2_dataset(
     root: str | Path,
     split: str | Split | None = None,
     extensions: Sequence[str] | None = None,
-    add_anomalous: bool = False, 
+    # add_anomalous: bool = False, 
 ) -> DataFrame:
     """Create WDDD2 AD samples by parsing the WDDD2 AD data file structure.
 
@@ -457,10 +479,18 @@ def make_WDDD2_dataset(
     mask_samples = samples.loc[samples.split == "ground_truth"].sort_values(by="image_path", ignore_index=True)
     samples = samples[samples.split != "ground_truth"].sort_values(by="image_path", ignore_index=True)
 
+
     # assign mask paths to anomalous test images
     samples["mask_path"] = ""
+
+    # print(len(samples.loc[
+    #     (samples.split == "test")  & (samples.label_index == LabelName.ABNORMAL),
+    #     "mask_path",
+    # ]))
+    # print(len(mask_samples.image_path.to_numpy()))
+
     samples.loc[
-        (samples.split == "test") & (samples.label_index == LabelName.ABNORMAL),
+        (samples.split == "test")  & (samples.label_index == LabelName.ABNORMAL),
         "mask_path",
     ] = mask_samples.image_path.to_numpy()
 
@@ -478,8 +508,8 @@ def make_WDDD2_dataset(
     if split:
         samples = samples[samples.split == split].reset_index(drop=True)
 
-    if add_anomalous:
-        samples = _add_anomalous(samples, length=10)
+    # if add_anomalous:
+    #     samples = _add_anomalous(samples, length=10)
 
     return samples
 
@@ -743,9 +773,15 @@ if __name__ == "__main__":
     root = "/home/skazuki/data/WDDD2_AD" 
     # root = "/mnt/e/WDDD2_AD"
 
+
+
+
+
+    cat = "wildType"
+    print(cat)
     datamodule = WDDD2_AD(
         root = root,  
-        category = "wildType",
+        category = cat,
         train_batch_size = 32,
         eval_batch_size = 32,
         num_workers = 30,
@@ -781,6 +817,8 @@ if __name__ == "__main__":
         print(batch["image"].dtype)
         print(batch["image"].min())
         print(batch["image"].max())
+        print(batch["mask"].unique())
+        print(batch["mask"].dtype)
         print()
         # for batch in data_loader:
         #     if batch["label"] == 1:
@@ -794,3 +832,48 @@ if __name__ == "__main__":
     # print(f"{mean/count=}, {std/count=}")
     # mean/count=tensor(0.1771), std/count=tensor(0.0322)
     # mean/count=tensor(0.1772), std/count=tensor(0.0328)
+
+
+    orf_list =["patchBlack",] # imb-3, let-754
+    orf_list =["C53D5.a", "C29E4.8"] # imb-3, let-754
+    for cat in orf_list:
+        print(cat)
+
+        datamodule = WDDD2_AD(
+            root = root,  
+            category = cat,
+            train_batch_size = 32,
+            eval_batch_size = 32,
+            num_workers = 30,
+            task = TaskType.SEGMENTATION,# CLASSIFICATION,#  
+            val_split_mode = ValSplitMode.NONE,# .FROM_TEST,
+            # val_split_ratio = 0.01,
+            image_size = (256,256),
+            transform = transforms,
+            seed  = 44,
+            # debug =True, 
+            debug =False, 
+            debug_data_ratio =0.01, 
+            add_anomalous = False, 
+        )
+        print("prepareing datamodule...")
+        datamodule.prepare_data()
+        datamodule.setup()
+        data_loader = getattr(datamodule,"test_data")
+        print(f"total iterations: {len(data_loader)}")
+        i, batch = next(enumerate(data_loader))
+
+        print(batch.keys()) # dict_keys(['image_path', 'label', 'image', 'mask'])
+        print(batch["image_path"])
+        print(batch["label"])
+        print(batch["image"].shape)
+        print(batch["image"].dtype)
+        print(batch["image"].min())
+        print(batch["image"].max())
+        print(batch["mask"].unique())
+        print(batch["mask"].dtype)
+        print()
+
+
+
+

@@ -119,7 +119,7 @@ def predict(
         eval_batch_size = batch,
         num_workers = worker, 
         task =  task, 
-        val_split_mode = ValSplitMode.SAME_AS_TEST,
+        val_split_mode = ValSplitMode.NONE,
         image_size = (resolution,resolution),
         transform = transforms,
         seed  = seed,
@@ -222,11 +222,11 @@ if __name__ == "__main__":
                             "oneCell",
                         ]
     anomaly_gene_list  = [
-                            "wildType",
                             # "F10E9.8", # sas-4
                             # "F54E7.3", # par-3
                             "C53D5.a", # imb-3
                             "C29E4.8", # let-754
+                            "wildType",
                         ]
 
 
@@ -288,7 +288,7 @@ if __name__ == "__main__":
                 task = TaskType.SEGMENTATION, #CLASSIFICATION,#
                 worker = 16,
                 seed=44,
-                batch = 10,
+                batch = 200,
                 debug =  False,# True,#
                 debug_data_ratio = 0.1,
             )

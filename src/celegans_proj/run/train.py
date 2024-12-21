@@ -249,7 +249,7 @@ if __name__ == "__main__":
 
     logging.basicConfig(filename='./logs/debug.log', filemode='w', level=logging.DEBUG)
 
-    exp_name  = "exp_20241213"
+    exp_name  = "exp_20241220"
 
     dataset_name = "WDDD2_AD"
     target_data = "wildType"

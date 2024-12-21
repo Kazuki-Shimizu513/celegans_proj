@@ -99,11 +99,11 @@ class Transporter:
         datatable_paths = [p.resolve() for p in self.datatable_path.iterdir() if p.is_file()]
 
         if "WT" in self.transport:
-            trans_kind =  "wildtype_"# TODO:: wtでは？
+            trans_kind =  "wildtype_"
             # 2. buld DataFrame from in_dir via WildTypeCelegansTableBuilder
             wt_paths = [p.resolve() for p in datatable_paths if (trans_kind  in p.stem)]
-            if  len(wt_paths) == 0 :
-                self.wt_table_builder()
+            # if  len(wt_paths) == 0 :
+            self.wt_table_builder()
 
             # 3. transfer (copy) to WDDD2_AD dataset
             self.transfer(
@@ -225,13 +225,12 @@ class Transporter:
 
                 # making the out path 
                 kinds = df['kotai_kind'].unique() # 'wildType'
-                print(kinds)
                 self.build_WDDD2_AD_dir_structure(self.out_path, kinds = kinds,)
                 split = df['split'].unique()[0]
 
                 for kind in kinds:
                     ## for wildtype, label is always "good"
-                    if kind == "wt":
+                    if kind == "wildType" or kind == "wt":
                         label = "good"
                         _kind = "wildType"
                     else:
@@ -287,6 +286,7 @@ if __name__ == "__main__":
     # h5_data_path = in_data_path.joinpath('BD5')
     # out_data_path = Path('/mnt/e/WDDD2_AD')
 
+    in_data_path = Path('/home/skazuki/data/WDDD2')
     in_data_path = Path('/home/skazuki/data/WDDD2_tmp')
     img_data_path = in_data_path.joinpath('TIFF')
     h5_data_path = in_data_path.joinpath('BD5')
@@ -295,13 +295,15 @@ if __name__ == "__main__":
 
     transporter = Transporter(
         transport = ["RNAi"],
+        # transport = ["WT"],
         in_path = img_data_path, 
         out_path = out_data_path, 
         split = True , 
         split_ratio = [24, 1, 8], # only for wt
         h5_path = h5_data_path,
         orf_list =["C53D5.a", "C29E4.8"], # imb-3, let-754
-        Z_range  =  (33, 40),
+        Z_range  =  (35, 35),
+        # Z_range  =  (33, 40),
         T_cellStage  = (2, ),
         shuffle = False,
         random_seed = 44,
