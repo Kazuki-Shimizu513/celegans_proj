@@ -48,7 +48,7 @@ class AnomalyMapGenerator(nn.Module):
 
         pred_scores = self.compute_metrics(
                         outputs["pred_imgs"], outputs["image"], # image,# 
-                        outputs['pred_masks'], outputs['gen_masks'], 
+                        # outputs['pred_masks'], outputs['gen_masks'], 
                         anomaly_maps, 
                         mode="ms_ssim",# None,#"lpips",  
         )
@@ -135,7 +135,7 @@ class AnomalyMapGenerator(nn.Module):
     def compute_metrics(
         self,
         pred_imgs, imgs,
-        pred_masks, gen_masks, 
+        # pred_masks, gen_masks, 
         anomaly_maps=None,
         mode = None,# "psnr", 
     ):

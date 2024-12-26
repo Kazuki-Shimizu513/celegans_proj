@@ -474,9 +474,6 @@ class MyTorchModel(nn.Module):
         if not self.training:
             self.store_outputs(output, store=True) #False)# # TODO:: move to MyVisualizer CallBack
 
-        # if not self.training: # # inference phase
-        #     output =  {"anomaly_maps": output["anomaly_maps"], "pred_scores": output["pred_scores"]}
-
         return output
 
     def cvt_channel_gray2RGB(self,x):
@@ -504,16 +501,12 @@ class MyTorchModel(nn.Module):
             output[name] = torch.nan_to_num(x, nan=0.0, posinf=1.0, neginf=-1.0)
             if name in [*latent_name, *noise_name,]:
                 output[name] = torch.clamp(x, min=-1.0, max=1.0)
-                # output[name] = self.min_max_scaling(x, new_min=-1.0, new_max=1.0)
             if name in img_name:
                 output[name] = torch.clamp(x, min=0.0, max=1.0)
-                # output[name] = self.min_max_scaling(x, new_min=0.0, new_max=1.0)
-            # print(f"{name}\tshape:{output[name].shape}\trange:{output[name].min().item()}\t{output[name].max().item()}")
 
         for name, param in self.pipe.unet.state_dict().items():
             param = torch.nan_to_num(param, nan=0.0, posinf=1.0, neginf=-1.0)
             param = torch.clamp(param, min=-1.0, max=1.0)
-            # param = self.min_max_scaling(param, new_min=-1.0, new_max=1.0)
             self.pipe.unet.state_dict()[name] = param
 
 

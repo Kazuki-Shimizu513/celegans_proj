@@ -68,6 +68,7 @@ def predict(
     debug = False, 
     debug_data_ratio = 0.08, 
 
+    train_models=["vae", "diffusion", ],
 ):
 
     seed_everything(seed, workers=True)
@@ -108,7 +109,7 @@ def predict(
                         ),
                         v2.ToDtype(torch.float32, scale=True),
                         # TODO: YouTransform
-                        v2.Normalize(mean=[0.485], std=[0.229]),
+                        # v2.Normalize(mean=[0.485], std=[0.229]),
                         ]) 
 
 
@@ -163,7 +164,7 @@ def predict(
     elif model_name == "MyModel":
         model = MyModel(
             learning_rate = 1e-8,
-            train_models=["vae", "diffusion", ],
+            train_models=train_models,# ["vae", "diffusion", ],
             training = True,
             training_mask = True,
             out_path = str(out_dir),
@@ -231,7 +232,7 @@ if __name__ == "__main__":
 
 
     # exp_name = "exp_example"
-    exp_name  = "exp_20241213"
+    exp_name  = "exp_20241222_vae"
 
     dataset_name = "WDDD2_AD"
     target_data = "wildType"
@@ -250,6 +251,7 @@ if __name__ == "__main__":
     # model_names = [ "Patchcore",]
     # model_names = [ "ReverseDistillation",]
     model_names = ["MyModel"]
+    train_models = ["vae",] # "diffusion",
 
     threshold =  ManualThreshold(default_value=0.9) # "F1AdaptiveThreshold" #
     image_metrics  = ['F1Score']# Useless:['MinMax', 'AnomalyScoreDistribution',]
@@ -257,8 +259,8 @@ if __name__ == "__main__":
 
     version = "v1" # "latest"
 
-    # for kind in pseudo_anomaly_modes :
-    for kind in anomaly_gene_list :
+    for kind in pseudo_anomaly_modes :
+    # for kind in anomaly_gene_list :
 
         for model_name in  model_names :
 
@@ -268,11 +270,11 @@ if __name__ == "__main__":
                 save_dir = str(log_dir),
             )
 
-            ckpt_path  = out_dir.joinpath(f"{exp_name}/models/epoch=50.ckpt")
+            ckpt_path  = out_dir.joinpath(f"{exp_name}/models/epoch=44.ckpt")
             # ckpt_path  = out_dir.joinpath(f"{exp_name}/{model_name}/{dataset_name}/wildType/{version}/weights/lightning/model.ckpt")
 
             predict(
-                exp_name =f"{exp_name}/predict_rnai",
+                exp_name =f"{exp_name}/predict",# /rnai
                 out_dir = out_dir,
                 in_dir =  in_dir,
                 model_name = model_name, 
@@ -291,5 +293,6 @@ if __name__ == "__main__":
                 batch = 200,
                 debug =  False,# True,#
                 debug_data_ratio = 0.1,
+                train_models = train_models,
             )
 

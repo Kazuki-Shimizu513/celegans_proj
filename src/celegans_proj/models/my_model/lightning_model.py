@@ -164,13 +164,16 @@ class MyModel(AnomalyModule):
             Optimizer: Adam optimizer for each decoder
         """
 
-        if "vae" in self.train_models  and "diffusion" in self.train_models:
-            params = list(self.model.pipe.unet.parameters()) \
-                + list(self.model.pipe.vae.parameters())
-        elif "vae" in self.train_models:
-            params = self.model.pipe.vae.parameters()
-        else:
-            params = self.model.pipe.unet.parameters()
+        params = list(self.model.pipe.unet.parameters()) \
+            + list(self.model.pipe.vae.parameters())
+
+#         if "vae" in self.train_models  and "diffusion" in self.train_models:
+#             params = list(self.model.pipe.unet.parameters()) \
+#                 + list(self.model.pipe.vae.parameters())
+#         elif "vae" in self.train_models:
+#             params = self.model.pipe.vae.parameters()
+#         else:
+#             params = self.model.pipe.unet.parameters()
 
         optimizer = torch.optim.AdamW(
             params,
@@ -199,6 +202,20 @@ class MyModel(AnomalyModule):
         ]
 
         return tuple(opt_settings)
+
+    def on_train_start(self,):
+        if "vae" in self.train_models  and "diffusion" in self.train_models:
+            pass
+        elif "vae" in self.train_models:
+            # Unet (conv_in, downsample_block, mid_block, upsample_block, conv_out)
+            for param in self.model.pipe.unet.parameters():
+                param.requires_grad = False 
+        else:# diffusion
+            for param in self.model.pipe.vae.encoder.parameters():
+                param.requires_grad = False 
+            for param in self.model.pipe.vae.decoder.parameters():
+                param.requires_grad = True 
+
 
     def training_step(self, batch: dict[str, str | torch.Tensor], batch_idx, *args, **kwargs) -> STEP_OUTPUT:
         """Perform a training step 

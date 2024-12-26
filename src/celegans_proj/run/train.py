@@ -72,6 +72,7 @@ def train(
     seed  =  44,
     debug =  False, 
     debug_data_ratio = 0.01, 
+    train_models = ["vae", "diffusion",],
 ):
 
     seed_everything(seed, workers=True)
@@ -211,7 +212,7 @@ def train(
     elif model_name == "MyModel":
         model = MyModel(
             learning_rate = learning_rate,
-            train_models=["vae", "diffusion", ],
+            train_models= train_models,
             training = True,
             training_mask = True,
             ddpm_num_steps= 50,
@@ -235,7 +236,7 @@ def train(
         log_every_n_steps=1,
     )
     print(f"{engine.image_metric_names=}\n{engine.pixel_metric_names=}")
-    # print(f"{engine._cache.args["callbacks"]=}")
+    print(f"{engine._cache.args["callbacks"]=}")
 
     print("starting Training")
     engine.fit(
@@ -249,7 +250,7 @@ if __name__ == "__main__":
 
     logging.basicConfig(filename='./logs/debug.log', filemode='w', level=logging.DEBUG)
 
-    exp_name  = "exp_20241221"
+    exp_name  = "exp_20241226_vae"
 
     dataset_name = "WDDD2_AD"
     target_data = "wildType"
@@ -265,14 +266,16 @@ if __name__ == "__main__":
 
     log_dir  = "./logs"
     model_name = "MyModel"
+    train_models = ["vae",] # "diffusion",
     threshold =   "F1AdaptiveThreshold" # ManualThreshold(default_value=0.5) # 
     image_metrics  = ['F1Score']
     pixel_metrics = ['AUROC']
 
     # ckpt=None
-    ckpt = f"{out_dir}/exp_20241213/models/epoch=50.ckpt"
+    ckpt = f"{out_dir}/exp_20241223_vae/models/epoch=228.ckpt"
     # version = "latest"# "v0" # 
     # ckpt = f"{out_dir}/{exp_name}/{model_name}/{dataset_name}/{target_data}/{version}/weights/lightning/model.ckpt"
+
 
     logger = WandbLogger(
         project =f"{exp_name}",
@@ -294,15 +297,16 @@ if __name__ == "__main__":
         pixel_metrics = pixel_metrics,
 
 
-        learning_rate  = 1e-1,
+        learning_rate  = 1e+1, # 1e-1
         ckpt = ckpt, 
         resolution =  256,
         task = TaskType.SEGMENTATION, #CLASSIFICATION,#
         worker = 16,
         seed  =  44,
-        batch = 12, # 2, #
+        batch = 30, # 2, #12
         debug = False, #
         # debug = True, #
         debug_data_ratio = 0.10, 
+        train_models = train_models,
     )
 
