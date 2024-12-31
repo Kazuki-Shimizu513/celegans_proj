@@ -400,7 +400,8 @@ if __name__ == "__main__":
 
         learning_rate  = 1e-8,
         ckpt = ckpt, 
-        resolution =  256,
+        # resolution =  256,
+        resolution =  64, # 256,
         task = TaskType.SEGMENTATION, #CLASSIFICATION,#
         worker = 16,
         seed  =  44,
