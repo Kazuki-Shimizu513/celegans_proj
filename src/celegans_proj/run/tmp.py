@@ -79,16 +79,8 @@ def train(
     image_dir = out_dir.joinpath("images")
     image_dir.mkdir(parents=True, exist_ok=True)
 
-    checkpoint_callback = ModelCheckpoint(
-        monitor="val_loss", # pixel_metrics[0], 
-        mode='min',
-        dirpath = str(model_dir),
-        filename='{epoch}',
-        save_top_k= 1,
-    )
-   
     callbacks = [
-        checkpoint_callback,
+        DeviceStatsMonitor(),
     ]
 
     print("prepareing datamodule")
@@ -366,8 +358,8 @@ if __name__ == "__main__":
 #     dataset_name  = "MVTec"
 #     target_data = "bottle"
 
-    out_dir = "/mnt/c/Users/compbio/Desktop/shimizudata/"
-    in_dir = f"/mnt/e/{dataset_name}"
+    out_dir = Path("/mnt/c/Users/compbio/Desktop/shimizudata/")
+    in_dir = Path(f"/mnt/e/{dataset_name}")
 
 #     out_dir = "/home/skazuki/result"
 #     in_dir = f"/home/skazuki/data/{dataset_name}"
@@ -438,8 +430,8 @@ if __name__ == "__main__":
 #     dataset_name  = "MVTec"
 #     target_data = "bottle"
 
-    out_dir = Path("/mnt/c/Users/compbio/Desktop/shimizudata/exp_server/")
-    in_dir = Path(f"/mnt/e/{dataset_name}")
+    # out_dir = Path("/mnt/c/Users/compbio/Desktop/shimizudata/")# exp_server/
+    # in_dir = Path(f"/mnt/e/{dataset_name}")
 
     log_dir  = Path("./logs")
     # model_names = [ "Patchcore",  "ReverseDistillation",]
@@ -452,7 +444,7 @@ if __name__ == "__main__":
     image_metrics  = ['F1Score']# Useless:['MinMax', 'AnomalyScoreDistribution',]
     pixel_metrics = ['AUROC']# Useless:['MinMax', 'AnomalyScoreDistribution',]# 
 
-    version = "v1" # "latest"
+    version = "latest"# "v1" # 
 
     for kind in pseudo_anomaly_modes :
     # for kind in anomaly_gene_list :
