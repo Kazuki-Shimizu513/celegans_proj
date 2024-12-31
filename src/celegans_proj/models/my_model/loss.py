@@ -242,7 +242,7 @@ class MyLoss(nn.Module):
         if target.dtype == torch.int64:
             target = target.to(torch.float)
 
-        loss = F.mse_loss(pred, target , reduction="sum",) # "mean",
+        loss = F.mse_loss(pred, target , reduction="sum",) #"mean",)# 
 
         if perceptual=="ssim":
             loss += 1 - ms_ssim(pred, target, data_range=1.0)

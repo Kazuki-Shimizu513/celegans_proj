@@ -250,7 +250,7 @@ if __name__ == "__main__":
 
     logging.basicConfig(filename='./logs/debug.log', filemode='w', level=logging.DEBUG)
 
-    exp_name  = "exp_20241226_vae"
+    exp_name  = "exp_20241229_vae"
 
     dataset_name = "WDDD2_AD"
     target_data = "wildType"
@@ -272,7 +272,7 @@ if __name__ == "__main__":
     pixel_metrics = ['AUROC']
 
     # ckpt=None
-    ckpt = f"{out_dir}/exp_20241223_vae/models/epoch=228.ckpt"
+    ckpt = f"{out_dir}/exp_20241226_vae/models/epoch=293.ckpt"
     # version = "latest"# "v0" # 
     # ckpt = f"{out_dir}/{exp_name}/{model_name}/{dataset_name}/{target_data}/{version}/weights/lightning/model.ckpt"
 
@@ -297,7 +297,11 @@ if __name__ == "__main__":
         pixel_metrics = pixel_metrics,
 
 
-        learning_rate  = 1e+1, # 1e-1
+        # learning_rate  = 1e+1, 
+        # learning_rate  = 1e-1,
+        # learning_rate  = 1e-5,
+        learning_rate  = 1e-8,
+        # learning_rate  = 1e-10,
         ckpt = ckpt, 
         resolution =  256,
         task = TaskType.SEGMENTATION, #CLASSIFICATION,#
