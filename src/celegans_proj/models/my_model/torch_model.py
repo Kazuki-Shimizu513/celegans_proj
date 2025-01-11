@@ -101,7 +101,7 @@ class MyTorchModel(nn.Module):
             vae_block_out_channels = (64, 128, 256, 256),
             vae_latent_channels = 64,
             vae_norm_num_groups = 64,
-            scaling_factor = 1, # 0.18215,
+            scaling_factor =  0.18215,
             force_upcast = True,
 
             # DDPM Unet
@@ -430,15 +430,15 @@ class MyTorchModel(nn.Module):
                 noises=noises, 
                 pred_noises=pred_noises, 
 
-                gen_imgs=gen_imgs,
-                gen_latents=gen_latents,
+#                 gen_imgs=gen_imgs,
+#                 gen_latents=gen_latents,
 
-                KL_THRESHOLDS=KL_THRESHOLDS,
-                gen_KL_THRESHOLDS=gen_KL_THRESHOLDS,
+#                 KL_THRESHOLDS=KL_THRESHOLDS,
+#                 gen_KL_THRESHOLDS=gen_KL_THRESHOLDS,
 
-                seg_masks=seg_masks,
-                pred_masks=pred_masks,
-                gen_masks=gen_masks,
+#                 seg_masks=seg_masks,
+#                 pred_masks=pred_masks,
+#                 gen_masks=gen_masks,
               )
         elif "vae" in self.train_models:
             pass

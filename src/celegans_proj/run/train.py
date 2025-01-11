@@ -250,7 +250,7 @@ if __name__ == "__main__":
 
     logging.basicConfig(filename='./logs/debug.log', filemode='w', level=logging.DEBUG)
 
-    exp_name  = "exp_20250105_diffusion"
+    exp_name  = "exp_20250111"
 
     dataset_name = "WDDD2_AD"
     target_data = "wildType"
@@ -258,21 +258,21 @@ if __name__ == "__main__":
 #     dataset_name  = "MVTec"
 #     target_data = "bottle"
 
-#     out_dir = "/mnt/c/Users/compbio/Desktop/shimizudata/"
-#     in_dir = f"/mnt/e/{dataset_name}"
+    out_dir = "/mnt/c/Users/compbio/Desktop/shimizudata/"
+    in_dir = f"/mnt/e/{dataset_name}"
 
-    out_dir = "/home/skazuki/result"
-    in_dir = f"/home/skazuki/data/{dataset_name}"
+#     out_dir = "/home/skazuki/result"
+#     in_dir = f"/home/skazuki/data/{dataset_name}"
 
     log_dir  = "./logs"
     model_name = "MyModel"
-    train_models = ["diffusion",] # "vae", # 
+    train_models = ["vae","diffusion",] #  # 
     threshold =   "F1AdaptiveThreshold" # ManualThreshold(default_value=0.5) # 
     image_metrics  = ['F1Score']
     pixel_metrics = ['AUROC']
 
     # ckpt=None
-    ckpt = f"{out_dir}/exp_20250105_diffusion/models/epoch=980.ckpt"
+    ckpt = f"{out_dir}/exp_server/exp_20250105_diffusion/models/epoch=1025.ckpt"
     # version = "latest"# "v0" # 
     # ckpt = f"{out_dir}/{exp_name}/{model_name}/{dataset_name}/{target_data}/{version}/weights/lightning/model.ckpt"
 
@@ -310,9 +310,9 @@ if __name__ == "__main__":
         task = TaskType.SEGMENTATION, #CLASSIFICATION,#
         worker = 16,
         seed  =  44,
-        batch = 30, # 2, #12 #
-        debug = False, #
-        # debug = True, #
+        batch = 2,# 30, # 12 #
+        # debug = False, #
+        debug = True, #
         debug_data_ratio = 0.10, 
         train_models = train_models,
     )
