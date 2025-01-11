@@ -89,18 +89,18 @@ class MyLoss(nn.Module):
             loss += self.loss_noise_weight * self.compute_recon_loss(
                 outputs['pred_noises'], outputs['noises'], )
 
-            loss += self.loss_gen_weight * self.compute_recon_loss(
-                outputs['gen_imgs'], outputs['image'], )
-            loss += self.loss_gen_weight * self.compute_recon_loss(
-                outputs['gen_latents'], outputs['latents'], )
+            # loss += self.loss_gen_weight * self.compute_recon_loss(
+            #     outputs['gen_imgs'], outputs['image'], )
+            # loss += self.loss_gen_weight * self.compute_recon_loss(
+            #     outputs['gen_latents'], outputs['latents'], )
 
-            loss += self.loss_emb_weight * self.compute_embedding_loss(
-                outputs['gen_latents'], outputs['latents'],)
+            # loss += self.loss_emb_weight * self.compute_embedding_loss(
+            #     outputs['gen_latents'], outputs['latents'],)
             loss += self.loss_emb_weight * self.compute_embedding_loss(
                 outputs['pred_latents'], outputs['latents'],)
 
-            loss += self.loss_mask_weight * self.compute_divergence_loss(
-                outputs['KL_THRESHOLDS'], outputs['gen_KL_THRESHOLDS'], )
+            # loss += self.loss_mask_weight * self.compute_divergence_loss(
+            #     outputs['KL_THRESHOLDS'], outputs['gen_KL_THRESHOLDS'], )
 
             loss += self.loss_kl_weight * outputs['posterior'].kl().mean()# kl loss
 
@@ -114,19 +114,21 @@ class MyLoss(nn.Module):
                 outputs['pred_latents'], outputs['latents'])
             loss += self.loss_noise_weight * self.compute_recon_loss(
                 outputs['pred_noises'], outputs['noises'], )
-            loss += self.loss_gen_weight * self.compute_recon_loss(
-                outputs['gen_imgs'], outputs['image'], )
-            loss += self.loss_gen_weight * self.compute_recon_loss(
-                outputs['gen_latents'], outputs['latents'], )
 
-            loss += self.loss_emb_weight * self.compute_embedding_loss(
-                outputs['gen_latents'], outputs['latents'],)
+            # loss += self.loss_gen_weight * self.compute_recon_loss(
+            #     outputs['gen_imgs'], outputs['image'], )
+            # loss += self.loss_gen_weight * self.compute_recon_loss(
+            #     outputs['gen_latents'], outputs['latents'], )
+
             loss += self.loss_emb_weight * self.compute_embedding_loss(
                 outputs['pred_latents'], outputs['latents'],)
+            # loss += self.loss_emb_weight * self.compute_embedding_loss(
+            #     outputs['gen_latents'], outputs['latents'],)
 
 
-            loss += self.loss_mask_weight * self.compute_divergence_loss(
-                outputs['KL_THRESHOLDS'], outputs['gen_KL_THRESHOLDS'], )
+
+            # loss += self.loss_mask_weight * self.compute_divergence_loss(
+            #     outputs['KL_THRESHOLDS'], outputs['gen_KL_THRESHOLDS'], )
             # loss += self.loss_mask_weight * self.compute_segmentation_loss(
                 # outputs['pred_masks'], outputs['seg_masks'], )
             # loss += self.loss_mask_weight * self.compute_recon_loss(outputs['pred_masks'], outputs['gen_masks'], )
@@ -245,7 +247,7 @@ class MyLoss(nn.Module):
         loss = F.mse_loss(pred, target , reduction="sum",) #"mean",)# 
 
         if perceptual=="ssim":
-            loss += 1 - ms_ssim(pred, target, data_range=1.0)
+            loss += 1 - ms_ssim(pred, target, data_range=1.0, reduction="sum",) # "mean"
 
         elif perceptual=="lpips":
             if pred.shape[1] == 1:
@@ -255,6 +257,7 @@ class MyLoss(nn.Module):
             loss += 1 - lpips(pred, target, 
                               net_type='squeeze', 
                               normalize=True,
+                              reduction="sum", # "mean"
                               )
 
         return loss

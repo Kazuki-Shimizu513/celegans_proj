@@ -391,8 +391,8 @@ class MyTorchModel(nn.Module):
             (
                 pred_noises, noises, 
                 pred_latents, noisy_latents, 
-                pred_masks, KL_THRESHOLDS,
-                gen_latents, gen_masks,  gen_KL_THRESHOLDS
+                # pred_masks, KL_THRESHOLDS,
+                # gen_latents, gen_masks,  gen_KL_THRESHOLDS
             ) = self.diffusion_step(
                 latents, 
                 prompt, path,
@@ -401,9 +401,9 @@ class MyTorchModel(nn.Module):
                 num_images_per_prompt = 1,  # SAG for each latent
             )
 
-            seg_masks, otsu_thresholds = self.make_ref_seg_msk(batch['image'], check=False,) # True, ) #(B, 256,256)
+            # seg_masks, otsu_thresholds = self.make_ref_seg_msk(batch['image'], check=False,) # True, ) #(B, 256,256)
 
-            gen_imgs = self.pipe.vae.decode(gen_latents/self.pipe.vae.config.scaling_factor, return_dict=False)[0]
+            # gen_imgs = self.pipe.vae.decode(gen_latents/self.pipe.vae.config.scaling_factor, return_dict=False)[0]
             # gen_imgs = self.cvt_channel_RGB2gray(gen_imgs)
 
         pred_imgs = self.pipe.vae.decode(pred_latents/self.pipe.vae.config.scaling_factor, return_dict=False)[0]
@@ -447,15 +447,15 @@ class MyTorchModel(nn.Module):
                 noises=noises, 
                 pred_noises=pred_noises, 
 
-                gen_imgs=gen_imgs,
-                gen_latents=gen_latents,
+                # gen_imgs=gen_imgs,
+                # gen_latents=gen_latents,
 
-                KL_THRESHOLDS=KL_THRESHOLDS,
-                gen_KL_THRESHOLDS=gen_KL_THRESHOLDS,
+                # KL_THRESHOLDS=KL_THRESHOLDS,
+                # gen_KL_THRESHOLDS=gen_KL_THRESHOLDS,
 
-                seg_masks=seg_masks,
-                pred_masks=pred_masks,
-                gen_masks=gen_masks,
+                # seg_masks=seg_masks,
+                # pred_masks=pred_masks,
+                # gen_masks=gen_masks,
               )
 
         self.scale_variables(
@@ -731,61 +731,61 @@ class MyTorchModel(nn.Module):
 
 
 
-        # parts segmentation
-        if self.training_mask:
-            # KL_THRESHOLDS = torch.tensor([[0.9]*4] * latents.shape[0], device=self.device) 
-            KL_THRESHOLDS = self.DiffSegParamModel(latents)  
-            pred_masks = self.segment_with_attn_maps(net_attn_maps,KL_THRESHOLDS,path, store=True, title = 'pred')
-        else:
-            KL_THRESHOLDS = torch.tensor([[0.9]*4] * latents.shape[0], device=self.device) 
-            pred_masks = torch.randint(5,(latents.shape[0],256,256), device=KL_THRESHOLDS.device)
-        del net_attn_maps
-        gc.collect()
+#         # parts segmentation
+#         if self.training_mask:
+#             # kl_thresholds = torch.tensor([[0.9]*4] * latents.shape[0], device=self.device) 
+#             kl_thresholds = self.diffsegparammodel(latents)  
+#             pred_masks = self.segment_with_attn_maps(net_attn_maps,kl_thresholds,path, store=true, title = 'pred')
+#         else:
+#             kl_thresholds = torch.tensor([[0.9]*4] * latents.shape[0], device=self.device) 
+#             pred_masks = torch.randint(5,(latents.shape[0],256,256), device=kl_thresholds.device)
+#         del net_attn_maps
+#         gc.collect()
 
 
 
 
 
-        # generate latents and gen_attn_maps
-        self.set_attn_processor(attn_proc_name="CrossAttnStoreProcessor")
-        # timesteps = self.scheduler.timesteps
-        timesteps = torch.tensor([self.ddpm_num_steps -1 ] * noises.shape[0])
-        gen_latents = noisy_latents.clone()
-        gen_attn_maps = []
-        num_total = noises.shape[0] # timesteps.sum().item()
-        with self.pipe.progress_bar(total=num_total) as progress_bar:
-            for idx, (noise, timestep) in enumerate(zip(noises, timesteps)):
-                noise = noise.unsqueeze(0)
-                timestep = int(timestep.item())
-                _attn_maps = {}
-                attn_maps = {}
-                noise_pred, attn_maps, = self._diffusion_step(
-                    noise,
-                    do_classifier_free_guidance,
-                    timestep,
-                    prompt_embeds,
-                    attn_maps,
-                )
-                _attn_maps = attn_maps
-                gen_latent = self.pipe.scheduler.step(noise_pred, timestep, noise, **extra_step_kwargs).pred_original_sample
+#         # generate latents and gen_attn_maps
+#         self.set_attn_processor(attn_proc_name="CrossAttnStoreProcessor")
+#         # timesteps = self.scheduler.timesteps
+#         timesteps = torch.tensor([self.ddpm_num_steps -1 ] * noises.shape[0])
+#         gen_latents = noisy_latents.clone()
+#         gen_attn_maps = []
+#         num_total = noises.shape[0] # timesteps.sum().item()
+#         with self.pipe.progress_bar(total=num_total) as progress_bar:
+#             for idx, (noise, timestep) in enumerate(zip(noises, timesteps)):
+#                 noise = noise.unsqueeze(0)
+#                 timestep = int(timestep.item())
+#                 _attn_maps = {}
+#                 attn_maps = {}
+#                 noise_pred, attn_maps, = self._diffusion_step(
+#                     noise,
+#                     do_classifier_free_guidance,
+#                     timestep,
+#                     prompt_embeds,
+#                     attn_maps,
+#                 )
+#                 _attn_maps = attn_maps
+#                 gen_latent = self.pipe.scheduler.step(noise_pred, timestep, noise, **extra_step_kwargs).pred_original_sample
 
-                gen_latents[idx] = gen_latent.squeeze(0).clone()
-                gen_attn_maps.append(_attn_maps)
-                # Update progress bar
-                progress_bar.update()
-            progress_bar.close()
+#                 gen_latents[idx] = gen_latent.squeeze(0).clone()
+#                 gen_attn_maps.append(_attn_maps)
+#                 # Update progress bar
+#                 progress_bar.update()
+#             progress_bar.close()
 
 
-        # parts segmentation
-        if self.training_mask:
-            # gen_KL_THRESHOLDS = torch.tensor([[0.9]*4] * latents.shape[0], device=self.device) 
-            gen_KL_THRESHOLDS = self.DiffSegParamModel(gen_latents)  
-            gen_masks = self.segment_with_attn_maps(gen_attn_maps,gen_KL_THRESHOLDS,path, store=True, title = 'gen')
-        else:
-            gen_KL_THRESHOLDS = torch.tensor([[0.9]*4] * latents.shape[0], device=self.device) 
-            gen_masks = torch.randint(5,(latents.shape[0],256,256), device=KL_THRESHOLDS.device)
-        del gen_attn_maps
-        gc.collect()
+#         # parts segmentation
+#         if self.training_mask:
+#             # gen_KL_THRESHOLDS = torch.tensor([[0.9]*4] * latents.shape[0], device=self.device) 
+#             gen_KL_THRESHOLDS = self.DiffSegParamModel(gen_latents)  
+#             gen_masks = self.segment_with_attn_maps(gen_attn_maps,gen_KL_THRESHOLDS,path, store=True, title = 'gen')
+#         else:
+#             gen_KL_THRESHOLDS = torch.tensor([[0.9]*4] * latents.shape[0], device=self.device) 
+#             gen_masks = torch.randint(5,(latents.shape[0],256,256), device=KL_THRESHOLDS.device)
+#         del gen_attn_maps
+#         gc.collect()
 
 
         self.pipe.maybe_free_model_hooks()
@@ -795,8 +795,8 @@ class MyTorchModel(nn.Module):
         return (
             pred_noises, noises, 
             pred_latents, noisy_latents, 
-            pred_masks, KL_THRESHOLDS,
-            gen_latents, gen_masks,  gen_KL_THRESHOLDS,
+            # pred_masks, KL_THRESHOLDS,
+            # gen_latents, gen_masks,  gen_KL_THRESHOLDS,
         )
 
     def set_attn_processor(self,attn_proc_name):

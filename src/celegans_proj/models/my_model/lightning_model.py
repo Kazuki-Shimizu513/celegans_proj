@@ -214,6 +214,7 @@ class MyModel(AnomalyModule):
             for param in self.model.pipe.vae.encoder.parameters():
                 param.requires_grad = False 
             for param in self.model.pipe.vae.decoder.parameters():
+                # param.requires_grad = False 
                 param.requires_grad = True 
 
 
