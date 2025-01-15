@@ -29,12 +29,12 @@ import albumentations as A
 # import tifffile
 # import h5py
 
-from caenorhabditiselegans_anomalydetection_dataset.utils.table_builder.celegans import (
+from celegans_proj.utils.table_builder.celegans import (
     WildTypeCelegansTableBuilder, 
     RNAiCelegansTableBuilder,
 )
-from caenorhabditiselegans_anomalydetection_dataset.utils.file_import import WDDD2FileNameUtil
-from caenorhabditiselegans_anomalydetection_dataset.generate.transfer import Transporter
+from celegans_proj.utils.file_import import WDDD2FileNameUtil
+from celegans_proj.generate.transfer import Transporter
 
 logger = logging.getLogger(__name__)
 
@@ -64,15 +64,16 @@ class PseudoAnomalyGenerator:
 
     def __call__(
         self,
-    ) -> None:
-        self.generate(
-            pseudo_anomaly_kinds = [
+        pseudo_anomaly_kinds = [
             "patchBlack",
             "gridBlack",
             "shrink",
             "zoom",
             "oneCell",
             ],
+    ) -> None:
+        self.generate(
+            pseudo_anomaly_kinds,
         )
 
     def generate(
@@ -168,10 +169,20 @@ class PseudoAnomalyGenerator:
             img, msk = self.generate_patchBlack(img_path)
         if kind == "gridBlack":
             img, msk = self.generate_gridBlack(img_path)
-        if kind == "zoom":
-            img, msk = self.generate_zoom(img_path)
-        if kind == "shrink":
-            img, msk = self.generate_shrink(img_path)
+        if  "zoom" in kind:
+            if len(kind) != 4:
+                rate = float(kind[-3:]) * 0.01
+            else:
+                rate = 1.5
+
+            img, msk = self.generate_zoom(img_path, rate=rate)
+        if "shrink" in kind :
+            if len(kind) != 6:
+                rate = float(kind[-2:]) * 0.01
+            else:
+                rate = 0.5
+
+            img, msk = self.generate_shrink(img_path, rate=rate)
         return img ,msk
 
     def generate_patchBlack(
@@ -262,7 +273,7 @@ class PseudoAnomalyGenerator:
         h, w = image.size
         shrink = image.resize(
             (int(w * rate), int(h * rate)), 
-            Image.NEAREST,
+            resample=Image.BILINEAR,  #  Image.NEAREST,
         )
         shrink = self.add_margin(shrink, w, h)
         img = self.crop_center(shrink, w, h)
@@ -289,7 +300,7 @@ class PseudoAnomalyGenerator:
         h, w = image.size
         zoom = image.resize(
             (int(w * rate), int(h * rate)),
-            Image.NEAREST
+            resample=Image.BILINEAR,  #  Image.NEAREST,
         )
         img = self.crop_center(zoom, w, h)
         img = np.array(img).astype(np.uint8)
@@ -453,13 +464,33 @@ if __name__ == "__main__":
 
 
     datatable_path = out_data_path.joinpath('meta_data/datatable/wildType_test.csv')
+    pseudo_anomaly_kinds = [
+        "patchBlack",
+        "gridBlack",
+        "shrink",
+        "zoom",
+        "oneCell",
+    ]
+    pseudo_anomaly_kinds = [
+        "shrink", # 50%
+        "shrink60",
+        "shrink70",
+        "shrink80",
+        "shrink90",
+        "zoom110",
+        "zoom120",
+        "zoom130",
+        "zoom140",
+        "zoom", # 150%
+    ]
+
     generator = PseudoAnomalyGenerator(
         datatable_path, 
         out_path= out_data_path,
         in_dir= img_data_path 
     )
 
-    generator()
+    generator(pseudo_anomaly_kinds)
 
     # test_generate_patchBlack()
 

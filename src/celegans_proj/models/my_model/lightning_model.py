@@ -6,6 +6,10 @@ import torch
 from lightning.pytorch.utilities.types import STEP_OUTPUT
 from torch import optim
 
+from torchmetrics.functional.image import (
+    peak_signal_noise_ratio as PSNR,
+)
+
 from anomalib import LearningType
 from anomalib.models.components import AnomalyModule
 
@@ -103,7 +107,7 @@ class MyModel(AnomalyModule):
             vae_block_out_channels = (64, 128, 256, 256),
             vae_latent_channels = 64,
             vae_norm_num_groups = 64,
-            scaling_factor = 1, # 0.18215,
+            scaling_factor = 0.18215,
             force_upcast = True,
 
             # DDPM Unet
@@ -259,7 +263,11 @@ class MyModel(AnomalyModule):
         batch["anomaly_maps"] = output["anomaly_maps"]
         batch["pred_scores"] = output["pred_scores"]
 
+        score = self._calc_PSNR(output["pred_imgs"], batch["image"])
+
         self.log("val_loss", loss.item(), on_epoch=True, prog_bar=True, logger=True)
+        self.log("val_score", score.item(), on_epoch=True, prog_bar=True, logger=True)
+
         return batch
 
     def predict_step(self, batch: dict[str, str | torch.Tensor], *args, **kwargs) -> STEP_OUTPUT:
@@ -284,6 +292,9 @@ class MyModel(AnomalyModule):
 
         return batch
 
+    def _calc_PSNR(self, pred, target):
+        score = PSNR(pred, target,)
+        return score
 
 
 

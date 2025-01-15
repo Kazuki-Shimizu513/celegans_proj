@@ -32,7 +32,7 @@ class AnomalyMapGenerator(nn.Module):
         # image = self.cvt_channel_gray2RGB(outputs["image"])
         recon_dist = self.compute_recon_distance(
                         outputs["pred_imgs"],  outputs["image"],# image,# 
-                        mode = "L1", 
+                        mode = "L2", 
                       )
 
         # seg_dist = self.compute_segmentation_distance(
@@ -151,12 +151,12 @@ class AnomalyMapGenerator(nn.Module):
         scores = []
         if mode == "psnr":
             for pred, img in zip(pred_imgs, imgs):
-                score = PSNR(pred, img, )
+                score = torch.max(scores) -PSNR(pred, img, )
                 scores.append(score)
         elif mode == "ms_ssim":
             for pred, img in zip(pred_imgs, imgs):
                 pred , img = pred.unsqueeze(0), img.unsqueeze(0)
-                score = ms_ssim(pred, img, data_range=1.0)
+                score = 1 - ms_ssim(pred, img, data_range=1.0)
                 scores.append(score)
         elif mode=="lpips":
             for pred, img in zip(pred_imgs, imgs):
@@ -164,7 +164,7 @@ class AnomalyMapGenerator(nn.Module):
                 if pred.shape[1] == 1:
                     pred = self.cvt_channel_gray2RGB(pred)
                     img = self.cvt_channel_gray2RGB(img)
-                score = lpips(pred, img, 
+                score = 1 - lpips(pred, img, 
                           net_type='squeeze', 
                           normalize=True,
                         )

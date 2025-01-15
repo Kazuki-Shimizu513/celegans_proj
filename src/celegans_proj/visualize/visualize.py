@@ -570,15 +570,31 @@ if __name__ == "__main__":
 
     logging.basicConfig(filename='./logs/debug.log', filemode='w', level=logging.DEBUG)
 
-    exp_name = "exp_20241222_vae/predict"
+    exp_name = "exp_20250113_ReverseDistillation/predict"
     # model_names = ["Patchcore", "ReverseDistillation"]
+    model_names = ["ReverseDistillation", ]
     # model_names = ["SimSID"]
-    model_names = ["MyModel"]
+    # model_names = ["MyModel"]
 
-    base_dir = Path("/home/skazuki/result/")
+    # base_dir = Path("/home/skazuki/result/")
     # base_dir = Path("/mnt/c/Users/compbio/Desktop/shimizudata/exp_server/")
+    base_dir = Path("/mnt/c/Users/compbio/Desktop/shimizudata/")
 
-    pseudo_anomaly_modes = ['wildType', 'patchBlack', 'zoom', 'shrink', 'oneCell'] # 'gridBlack',
+    # pseudo_anomaly_modes = ['wildType', 'patchBlack', 'zoom', 'shrink', 'oneCell'] # 'gridBlack',
+    pseudo_anomaly_modes = [
+                            "shrink",
+                            "shrink60",
+                            "shrink70",
+                            "shrink80",
+                            "shrink90",
+                            "wildType",
+                            "zoom110",
+                            "zoom120",
+                            "zoom130",
+                            "zoom140",
+                            "zoom",
+                        ]
+ 
     anomaly_gene_list  = [
                             "wildType",
                             # "F10E9.8", # sas-4

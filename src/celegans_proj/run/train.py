@@ -85,29 +85,41 @@ def train(
     image_dir = out_dir.joinpath("images")
     image_dir.mkdir(parents=True, exist_ok=True)
 
-    checkpoint_callback = ModelCheckpoint(
-        monitor="val_loss", # pixel_metrics[0], 
-        mode='min',
-        dirpath = str(model_dir),
-        filename='{epoch}',
-        save_top_k= 1,
-    )
-    
-    vis_callback = MyVisualizationCallback(
-        visualizers=MyVisualizer(
-            mode = VisualizationMode.FULL, # SIMPLE,
-            task=task,
-            normalize=False
-        ),
-        save=True,
-        root=str(image_dir),
-    )
+    if model_name in ["MyModel", "SimSID"]:
+        # checkpoint_callback = ModelCheckpoint(
+        #     monitor="val_loss", # pixel_metrics[0], 
+        #     mode='min',
+        #     dirpath = str(model_dir),
+        #     filename='{epoch}',
+        #     save_top_k= 1,
+        # )
+        checkpoint_callback = ModelCheckpoint(
+            monitor="val_score", # pixel_metrics[0], 
+            mode='max',
+            dirpath = str(model_dir),
+            filename='{epoch}',
+            save_top_k= 1,
+        )
+        # checkpoint_callback = ModelCheckpoint(
+        #     monitor="pixel_AUROC", # pixel_metrics[0], 
+        #     mode='max',
+        #     dirpath = str(model_dir),
+        #     filename='{epoch}',
+        #     save_top_k= 1,
+        # )
+    else:
+        checkpoint_callback = ModelCheckpoint(
+            monitor="pixel_AUROC", # pixel_metrics[0], 
+            mode='max',
+            dirpath = str(model_dir),
+            filename='{epoch}',
+            save_top_k= 1,
+        )
 
     callbacks = [
         checkpoint_callback,
         # EarlyStopping("val_loss"),
         # DeviceStatsMonitor(),
-        # vis_callback,
     ]
 
     print("prepareing datamodule")
@@ -167,7 +179,7 @@ def train(
         eval_batch_size = batch,
         num_workers = worker, 
         task = task , # TaskType.SEGMENTATION,#CLASSIFICATION,#  
-        val_split_mode = ValSplitMode.FROM_TEST,
+        val_split_mode = ValSplitMode.SYNTHETIC, #.FROM_TEST, # 
         val_split_ratio = 0.01,
         image_size = (resolution,resolution),
         transform = transforms,
@@ -215,7 +227,7 @@ def train(
             train_models= train_models,
             training = True,
             training_mask = False,# True,
-            ddpm_num_steps= 50,
+            ddpm_num_steps= 10,
             out_path = str(out_dir),
         )
     else:
@@ -265,16 +277,18 @@ if __name__ == "__main__":
 #     in_dir = f"/home/skazuki/data/{dataset_name}"
 
     log_dir  = "./logs"
+    # model_name = "ReverseDistillation" # "Patchcore"
     model_name = "MyModel"
-    train_models = ["vae","diffusion",] #  # 
+    train_models = ["diffusion",] # "vae", # 
     threshold =   "F1AdaptiveThreshold" # ManualThreshold(default_value=0.5) # 
     image_metrics  = ['F1Score']
     pixel_metrics = ['AUROC']
 
+    # version = "v1" # "latest"# 
     # ckpt=None
-    ckpt = f"{out_dir}/exp_server/exp_20250105_diffusion/models/epoch=1025.ckpt"
-    # version = "latest"# "v0" # 
     # ckpt = f"{out_dir}/{exp_name}/{model_name}/{dataset_name}/{target_data}/{version}/weights/lightning/model.ckpt"
+    ckpt = f"{out_dir}/exp_20250111/models/epoch=1198.ckpt"
+    # ckpt = f"{out_dir}/exp_server/exp_20241229_vae/models/epoch=891.ckpt"
 
 
     logger = WandbLogger(
@@ -305,12 +319,14 @@ if __name__ == "__main__":
         # learning_rate  = 1e-4,
         # learning_rate  = 1e-8,
         # learning_rate  = 1e-10,
+        # learning_rate  = 1e-20,
+        # learning_rate  = 1e-30,
         ckpt = ckpt, 
         resolution =  256,
         task = TaskType.SEGMENTATION, #CLASSIFICATION,#
         worker = 16,
         seed  =  44,
-        batch = 2,# 30, # 12 #
+        batch = 2, # 30, # 12 # 80,#
         # debug = False, #
         debug = True, #
         debug_data_ratio = 0.10, 

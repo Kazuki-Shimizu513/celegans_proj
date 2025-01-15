@@ -222,17 +222,31 @@ if __name__ == "__main__":
                             "shrink",
                             "oneCell",
                         ]
+    pseudo_anomaly_modes = [
+                            "shrink",
+                            "shrink60",
+                            "shrink70",
+                            "shrink80",
+                            "shrink90",
+                            "wildType",
+                            "zoom110",
+                            "zoom120",
+                            "zoom130",
+                            "zoom140",
+                            "zoom",
+                        ]
+ 
     anomaly_gene_list  = [
+                            "wildType",
                             # "F10E9.8", # sas-4
                             # "F54E7.3", # par-3
                             "C53D5.a", # imb-3
                             "C29E4.8", # let-754
-                            "wildType",
                         ]
 
 
-    # exp_name = "exp_example"
-    exp_name  = "exp_20241222_vae"
+    exp_name = "exp_20250113_ReverseDistillation"
+    # exp_name  = "exp_20241222_vae"
 
     dataset_name = "WDDD2_AD"
     target_data = "wildType"
@@ -241,23 +255,24 @@ if __name__ == "__main__":
 #     target_data = "bottle"
 
     # out_dir = Path("/mnt/c/Users/compbio/Desktop/shimizudata/exp_server/")
-    # in_dir = Path(f"/mnt/e/{dataset_name}")
+    out_dir = Path("/mnt/c/Users/compbio/Desktop/shimizudata/")
+    in_dir = Path(f"/mnt/e/{dataset_name}")
 
-    out_dir = Path("/home/skazuki/result")
-    in_dir = Path(f"/home/skazuki/data/{dataset_name}")
+    # out_dir = Path("/home/skazuki/result")
+    # in_dir = Path(f"/home/skazuki/data/{dataset_name}")
 
     log_dir  = Path("./logs")
     # model_names = [ "Patchcore",  "ReverseDistillation",]
     # model_names = [ "Patchcore",]
-    # model_names = [ "ReverseDistillation",]
-    model_names = ["MyModel"]
-    train_models = ["vae",] # "diffusion",
+    model_names = [ "ReverseDistillation",]
+    # model_names = ["MyModel"]
+    train_models = ["vae",] # "diffusion", #
 
-    threshold =  ManualThreshold(default_value=0.9) # "F1AdaptiveThreshold" #
+    threshold = "F1AdaptiveThreshold" # ManualThreshold(default_value=0.9) # 
     image_metrics  = ['F1Score']# Useless:['MinMax', 'AnomalyScoreDistribution',]
     pixel_metrics = ['AUROC']# Useless:['MinMax', 'AnomalyScoreDistribution',]# 
 
-    version = "v1" # "latest"
+    version = "v5" # "latest" # 
 
     for kind in pseudo_anomaly_modes :
     # for kind in anomaly_gene_list :
@@ -270,8 +285,8 @@ if __name__ == "__main__":
                 save_dir = str(log_dir),
             )
 
-            ckpt_path  = out_dir.joinpath(f"{exp_name}/models/epoch=44.ckpt")
-            # ckpt_path  = out_dir.joinpath(f"{exp_name}/{model_name}/{dataset_name}/wildType/{version}/weights/lightning/model.ckpt")
+            # ckpt_path  = out_dir.joinpath(f"{exp_name}/models/epoch=0-pixel_AUROC=0.84.ckpt")
+            ckpt_path  = out_dir.joinpath(f"{exp_name}/{model_name}/{dataset_name}/wildType/{version}/weights/lightning/model.ckpt")
 
             predict(
                 exp_name =f"{exp_name}/predict",# /rnai
@@ -284,14 +299,13 @@ if __name__ == "__main__":
                 image_metrics  = image_metrics,
                 pixel_metrics = pixel_metrics,
 
-
                 ckpt = ckpt_path,
                 resolution = 256,
                 task = TaskType.SEGMENTATION, #CLASSIFICATION,#
                 worker = 16,
-                seed=44,
-                batch = 200,
-                debug =  False,# True,#
+                seed = 44,
+                batch = 500,# 200,
+                debug =  True,#False,# 
                 debug_data_ratio = 0.1,
                 train_models = train_models,
             )
