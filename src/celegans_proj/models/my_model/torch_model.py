@@ -391,7 +391,8 @@ class MyTorchModel(nn.Module):
             (
                 pred_noises, noises, 
                 pred_latents, noisy_latents, 
-                # pred_masks, KL_THRESHOLDS,
+                pred_masks, 
+                # KL_THRESHOLDS,
                 # gen_latents, gen_masks,  gen_KL_THRESHOLDS
             ) = self.diffusion_step(
                 latents, 
@@ -402,7 +403,6 @@ class MyTorchModel(nn.Module):
             )
 
             # seg_masks, otsu_thresholds = self.make_ref_seg_msk(batch['image'], check=False,) # True, ) #(B, 256,256)
-
             # gen_imgs = self.pipe.vae.decode(gen_latents/self.pipe.vae.config.scaling_factor, return_dict=False)[0]
             # gen_imgs = self.cvt_channel_RGB2gray(gen_imgs)
 
@@ -430,14 +430,15 @@ class MyTorchModel(nn.Module):
                 noises=noises, 
                 pred_noises=pred_noises, 
 
+                pred_masks=pred_masks,
+
+#                 seg_masks=seg_masks,
+#                 KL_THRESHOLDS=KL_THRESHOLDS,
+
 #                 gen_imgs=gen_imgs,
 #                 gen_latents=gen_latents,
 
-#                 KL_THRESHOLDS=KL_THRESHOLDS,
 #                 gen_KL_THRESHOLDS=gen_KL_THRESHOLDS,
-
-#                 seg_masks=seg_masks,
-#                 pred_masks=pred_masks,
 #                 gen_masks=gen_masks,
               )
         elif "vae" in self.train_models:
@@ -634,6 +635,7 @@ class MyTorchModel(nn.Module):
         # 2.1 Sample a random timestep and Nose
         self.pipe.scheduler.set_timesteps(self.ddpm_num_steps, device=device)
         noises = torch.randn(latents.shape).to(latents.device)
+
         # 2.2 ADD Noise to latents for random timestep
         if self.training:
             bsz = latents.shape[0]  # batch_size
@@ -641,9 +643,11 @@ class MyTorchModel(nn.Module):
                                           device=latents.device,).long()
             noisy_latents = self.pipe.scheduler.add_noise(latents, noises, timesteps)
         else:
-            steps =  self.ddpm_num_steps #10 if self.ddpm_num_steps > 10 else self.ddpm_num_steps# 
+            steps = 2 if self.ddpm_num_steps > 1 else self.ddpm_num_steps#  self.ddpm_num_steps #
             timesteps = torch.tensor([steps-1] * len(latents))
-            noisy_latents = latents.clone()
+            # noisy_latents = latents.clone()
+            noisy_latents = self.pipe.scheduler.add_noise(latents, noises, timesteps)
+
         pred_noises = torch.zeros_like(noises)
 
         # 2.3 Prepare latent variables with prompt_embeds
@@ -691,36 +695,52 @@ class MyTorchModel(nn.Module):
                 _attn_maps = {}
                 attn_maps = {}
                 # 4. Execute Denoising Loop
-                if self.training:
 
-                    noise_pred, attn_maps,  = self._diffusion_step(
-                        latent,
-                        do_classifier_free_guidance,
-                        timestep,
-                        prompt_embeds,
-                        attn_maps,
-                    )
-                    # Update attn_maps
-                    _attn_maps = attn_maps
-                    pred_noises[idx] = noise_pred.squeeze(0).clone()
-                    # compute the original sample x_t -> x_0
-                    latent = self.pipe.scheduler.step(noise_pred, timestep, latent, **extra_step_kwargs).pred_original_sample
+                noise_pred, attn_maps,  = self._diffusion_step(
+                    latent,
+                    do_classifier_free_guidance,
+                    timestep,
+                    prompt_embeds,
+                    attn_maps,
+                )
+                # Update attn_maps
+                _attn_maps = attn_maps
+                pred_noises[idx] = noise_pred.squeeze(0).clone()
+                # compute the original sample x_t -> x_0
+                latent = self.pipe.scheduler.step(noise_pred, timestep, latent, **extra_step_kwargs).pred_original_sample
 
-                else:
-                    for i, t in enumerate(list(reversed(range(timestep)))): # Very Heavy
-                        noise_pred, attn_maps, = self._sag_step(
-                            i, t, latent, prompt_embeds,
-                            do_classifier_free_guidance, do_self_attention_guidance, 
-                            guidance_scale, sag_scale,
-                            attn_maps,
-                            added_uncond_kwargs=added_uncond_kwargs,
-                            added_cond_kwargs=added_cond_kwargs,
-                        )
-                        # Update attn_maps
-                        _attn_maps = self.update_attn_maps(_attn_maps, attn_maps, timestep)# , process)
-                        pred_noises[idx] = pred_noises[idx] + noise_pred.squeeze(0) / timestep
-                        # compute the previous noisy sample x_t -> x_t-1
-                        latent = self.pipe.scheduler.step(noise_pred, t, latent, **extra_step_kwargs).prev_sample
+
+#                 if self.training:
+
+#                     noise_pred, attn_maps,  = self._diffusion_step(
+#                         latent,
+#                         do_classifier_free_guidance,
+#                         timestep,
+#                         prompt_embeds,
+#                         attn_maps,
+#                     )
+#                     # Update attn_maps
+#                     _attn_maps = attn_maps
+#                     pred_noises[idx] = noise_pred.squeeze(0).clone()
+#                     # compute the original sample x_t -> x_0
+#                     latent = self.pipe.scheduler.step(noise_pred, timestep, latent, **extra_step_kwargs).pred_original_sample
+
+#                 else:
+
+#                     for i, t in enumerate(list(reversed(range(timestep)))): # Very Heavy
+#                         noise_pred, attn_maps, = self._sag_step(
+#                             i, t, latent, prompt_embeds,
+#                             do_classifier_free_guidance, do_self_attention_guidance, 
+#                             guidance_scale, sag_scale,
+#                             attn_maps,
+#                             added_uncond_kwargs=added_uncond_kwargs,
+#                             added_cond_kwargs=added_cond_kwargs,
+#                         )
+#                         # Update attn_maps
+#                         _attn_maps = self.update_attn_maps(_attn_maps, attn_maps, timestep)# , process)
+#                         pred_noises[idx] = pred_noises[idx] + noise_pred.squeeze(0) / timestep
+#                         # compute the previous noisy sample x_t -> x_t-1
+#                         latent = self.pipe.scheduler.step(noise_pred, t, latent, **extra_step_kwargs).prev_sample
 
                 pred_latents[idx] = latent.squeeze(0).clone()
                 net_attn_maps.append(_attn_maps)
@@ -731,16 +751,16 @@ class MyTorchModel(nn.Module):
 
 
 
-#         # parts segmentation
-#         if self.training_mask:
-#             # kl_thresholds = torch.tensor([[0.9]*4] * latents.shape[0], device=self.device) 
-#             kl_thresholds = self.diffsegparammodel(latents)  
-#             pred_masks = self.segment_with_attn_maps(net_attn_maps,kl_thresholds,path, store=true, title = 'pred')
-#         else:
-#             kl_thresholds = torch.tensor([[0.9]*4] * latents.shape[0], device=self.device) 
-#             pred_masks = torch.randint(5,(latents.shape[0],256,256), device=kl_thresholds.device)
-#         del net_attn_maps
-#         gc.collect()
+        # parts segmentation
+        if self.training_mask:
+            # KL_THRESHOLDS = self.diffsegparammodel(latents)  
+            KL_THRESHOLDS = torch.tensor([[0.9]*4] * latents.shape[0], device=self.device) 
+            pred_masks = self.segment_with_attn_maps(net_attn_maps,KL_THRESHOLDS, path, store=True, title = 'pred')
+        else:
+            KL_THRESHOLDS = torch.tensor([[0.9]*4] * latents.shape[0], device=self.device) 
+            pred_masks = torch.randint(5,(latents.shape[0],256,256), device=KL_THRESHOLDS.device)
+        del net_attn_maps
+        gc.collect()
 
 
 
@@ -795,8 +815,10 @@ class MyTorchModel(nn.Module):
         return (
             pred_noises, noises, 
             pred_latents, noisy_latents, 
-            # pred_masks, KL_THRESHOLDS,
-            # gen_latents, gen_masks,  gen_KL_THRESHOLDS,
+            pred_masks, 
+            # KL_THRESHOLDS,
+            # gen_latents, gen_masks,  
+            # gen_KL_THRESHOLDS,
         )
 
     def set_attn_processor(self,attn_proc_name):

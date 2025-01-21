@@ -150,7 +150,7 @@ class MyModel(AnomalyModule):
             # StableDiffusionSAG
             model_id = "stabilityai/stable-diffusion-2",
             guidance_scale=0.0, 
-            sag_scale=1.0, 
+            sag_scale=0.001, 
 
             # DiffSeg
             ## DiffSegParamModel
@@ -295,8 +295,6 @@ class MyModel(AnomalyModule):
     def _calc_PSNR(self, pred, target):
         score = PSNR(pred, target,)
         return score
-
-
 
     @property
     def trainer_arguments(self) -> dict[str, Any]:

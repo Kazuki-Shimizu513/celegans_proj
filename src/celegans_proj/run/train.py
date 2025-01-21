@@ -73,6 +73,7 @@ def train(
     debug =  False, 
     debug_data_ratio = 0.01, 
     train_models = ["vae", "diffusion",],
+    max_epochs = -1,
 ):
 
     seed_everything(seed, workers=True)
@@ -226,8 +227,8 @@ def train(
             learning_rate = learning_rate,
             train_models= train_models,
             training = True,
-            training_mask = False,# True,
-            ddpm_num_steps= 10,
+            training_mask = True,
+            ddpm_num_steps= 10, # 50, # 
             out_path = str(out_dir),
         )
     else:
@@ -244,7 +245,7 @@ def train(
         threshold = threshold,
         image_metrics=image_metrics,
         pixel_metrics=pixel_metrics,
-        max_epochs = -1,
+        max_epochs = max_epochs, # -1,
         log_every_n_steps=1,
     )
     print(f"{engine.image_metric_names=}\n{engine.pixel_metric_names=}")
@@ -252,7 +253,10 @@ def train(
 
     print("starting Training")
     engine.fit(
-        datamodule=datamodule,
+        # datamodule=datamodule,
+        # train_dataloaders=datamodule.train_dataloader(),
+        train_dataloaders=datamodule.test_dataloader(),
+        val_dataloaders=datamodule.val_dataloader(),
         model=model,
         ckpt_path = ckpt,
     )
@@ -262,7 +266,7 @@ if __name__ == "__main__":
 
     logging.basicConfig(filename='./logs/debug.log', filemode='w', level=logging.DEBUG)
 
-    exp_name  = "exp_20250111"
+    exp_name  = "exp_20250118"
 
     dataset_name = "WDDD2_AD"
     target_data = "wildType"
@@ -279,7 +283,7 @@ if __name__ == "__main__":
     log_dir  = "./logs"
     # model_name = "ReverseDistillation" # "Patchcore"
     model_name = "MyModel"
-    train_models = ["diffusion",] # "vae", # 
+    train_models = ["vae", ] # "diffusion", # 
     threshold =   "F1AdaptiveThreshold" # ManualThreshold(default_value=0.5) # 
     image_metrics  = ['F1Score']
     pixel_metrics = ['AUROC']
@@ -287,7 +291,7 @@ if __name__ == "__main__":
     # version = "v1" # "latest"# 
     # ckpt=None
     # ckpt = f"{out_dir}/{exp_name}/{model_name}/{dataset_name}/{target_data}/{version}/weights/lightning/model.ckpt"
-    ckpt = f"{out_dir}/exp_20250111/models/epoch=1198.ckpt"
+    ckpt = f"{out_dir}/exp_20250118/models/epoch=1644.ckpt"
     # ckpt = f"{out_dir}/exp_server/exp_20241229_vae/models/epoch=891.ckpt"
 
 
@@ -311,25 +315,30 @@ if __name__ == "__main__":
         pixel_metrics = pixel_metrics,
 
 
-        learning_rate  = 1e+10, 
+        # learning_rate  = 1e+1000, 
+        # learning_rate  = 1e+100, 
+        # learning_rate  = 1e+10, 
         # learning_rate  = 1e+8, 
         # learning_rate  = 1e+4, 
         # learning_rate  = 1e+1, 
-        # learning_rate  = 1e-1,
+        learning_rate  = 1e-1,
         # learning_rate  = 1e-4,
         # learning_rate  = 1e-8,
         # learning_rate  = 1e-10,
         # learning_rate  = 1e-20,
         # learning_rate  = 1e-30,
+        # learning_rate  = 1e-100,
+        # learning_rate  = 1e-1000,
+        # learning_rate  = 1e-10000,
         ckpt = ckpt, 
         resolution =  256,
         task = TaskType.SEGMENTATION, #CLASSIFICATION,#
         worker = 16,
         seed  =  44,
-        batch = 2, # 30, # 12 # 80,#
-        # debug = False, #
-        debug = True, #
-        debug_data_ratio = 0.10, 
+        batch = 8, # 2, # 30, # 80,#
+        debug = True, # False, #
+        debug_data_ratio = 0.9, 
         train_models = train_models,
+        max_epochs = -1,
     )
 
