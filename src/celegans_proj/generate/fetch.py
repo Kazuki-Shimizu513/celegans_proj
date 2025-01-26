@@ -136,7 +136,7 @@ class WDDD2expander:
                 np.save(str(fname), vol)
 
             # save as img foreach timepoint and depth 
-            tif_dir = self.out_dir.joinpath("TIFF")
+            tif_dir = self.out_dir.joinpath("TIF_GRAY") # "TIFF"
             name_dir = tif_dir.joinpath(out["name"])
             name_dir.mkdir(mode=0o777,parents=True, exist_ok=True)
             T,Z,W,H = vol.shape
@@ -163,7 +163,8 @@ class WDDD2expander:
 if __name__ == "__main__":
     print(f"in fetch.py")
 
-    out_dir= "/home/skazuki/data/WDDD2_tmp/" # Parmission Denided : WDDD2 is owned by Mr. 1009 
+    # out_dir= "/home/skazuki/data/WDDD2_tmp/" # Parmission Denided : WDDD2 is owned by Mr. 1009 
+    out_dir= "/mnt/d/WDDD2/" 
 
     imb_3 = [
         "https://wddd.riken.jp/LIF/RNAi_C53D5.a_120606_01.lif",
