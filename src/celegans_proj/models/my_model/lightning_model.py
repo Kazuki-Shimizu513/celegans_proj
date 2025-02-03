@@ -46,6 +46,7 @@ class MyModel(AnomalyModule):
 
     ) -> None:
         super().__init__()
+        self.save_hyperparameters()
 
         # Reproducibility
         self.seed = seed # 44,
@@ -87,7 +88,7 @@ class MyModel(AnomalyModule):
             # Model General
             layers_per_block = 2,
             act_fn = "silu",
-            sample_size = 32,
+            sample_size = 256,
 
             # VAE
             vae_in_channels = 1,
@@ -105,8 +106,8 @@ class MyModel(AnomalyModule):
                                 "UpDecoderBlock2D",
                             ),
             vae_block_out_channels = (64, 128, 256, 256),
-            vae_latent_channels = 64,
-            vae_norm_num_groups = 64,
+            vae_latent_channels = 1024,
+            vae_norm_num_groups = 32,
             scaling_factor = 0.18215,
             force_upcast = True,
 
@@ -125,7 +126,6 @@ class MyModel(AnomalyModule):
                                 "CrossAttnUpBlock2D",
                              ),
             unet_attention_head_dim = (5, 10, 20, 20),
-            # unet_block_out_channels = (32, 64, 128, 256), # 
             unet_block_out_channels = (320, 640, 1280, 1280),# 
             unet_cross_attention_dim= 1024,
             resnet_time_scale_shift = "default",
@@ -150,7 +150,7 @@ class MyModel(AnomalyModule):
             # StableDiffusionSAG
             model_id = "stabilityai/stable-diffusion-2",
             guidance_scale=0.0, 
-            sag_scale=0.001, 
+            sag_scale=0.75, 
 
             # DiffSeg
             ## DiffSegParamModel
@@ -263,8 +263,8 @@ class MyModel(AnomalyModule):
         batch["anomaly_maps"] = output["anomaly_maps"]
         batch["pred_scores"] = output["pred_scores"]
 
+        # TODO:: eject to visualize callback
         score = self._calc_PSNR(output["pred_imgs"], batch["image"])
-
         self.log("val_loss", loss.item(), on_epoch=True, prog_bar=True, logger=True)
         self.log("val_score", score.item(), on_epoch=True, prog_bar=True, logger=True)
 

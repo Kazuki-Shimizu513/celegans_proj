@@ -81,7 +81,7 @@ class MyTorchModel(nn.Module):
             # Model General
             layers_per_block = 2,
             act_fn = "silu",
-            sample_size = 32,
+            sample_size = 256,
 
             # VAE
             vae_in_channels = 1,
@@ -99,8 +99,8 @@ class MyTorchModel(nn.Module):
                                 "UpDecoderBlock2D",
                             ),
             vae_block_out_channels = (64, 128, 256, 256),
-            vae_latent_channels = 64,
-            vae_norm_num_groups = 64,
+            vae_latent_channels = 1024,
+            vae_norm_num_groups = 32,
             scaling_factor =  0.18215,
             force_upcast = True,
 
@@ -119,8 +119,7 @@ class MyTorchModel(nn.Module):
                                 "CrossAttnUpBlock2D",
                              ),
             unet_attention_head_dim = (5, 10, 20, 20),
-            unet_block_out_channels = (320, 640, 1280, 1280),# 
-            # unet_block_out_channels = (32, 64, 128, 256), # 
+            unet_block_out_channels = (320, 640, 1280, 1280), 
             unet_cross_attention_dim= 1024,
             resnet_time_scale_shift = "default",
             time_embedding_type = "positional",
@@ -129,7 +128,7 @@ class MyTorchModel(nn.Module):
             attention_type = "default",
 
             # DDPM Scheduler
-            ddpm_num_steps= 100,# 1000,
+            ddpm_num_steps= 10,
             beta_start = 0.0001, 
             beta_end = 0.02,
             trained_betas = None,
@@ -144,8 +143,7 @@ class MyTorchModel(nn.Module):
             # StableDiffusionSAG
             model_id = "stabilityai/stable-diffusion-2",
             guidance_scale=0.0, 
-            sag_scale=1.0, 
-            # map_size = (8,8),
+            sag_scale=10.0, 
             map_size = (4,4),
 
 
@@ -180,7 +178,7 @@ class MyTorchModel(nn.Module):
         self.segmentor = DiffSeg(torch.tensor(KL_THRESHOLD).flatten(), self.NUM_POINTS, self.REFINEMENT, )
  
         self.DiffSegParamModel = MyDiffSegParamNet(
-            in_channel = 64, # this depends on VAE latent channel
+            in_channel = 1024, # this depends on VAE latent channel
             KL_len = 4,
         )
 
@@ -367,7 +365,7 @@ class MyTorchModel(nn.Module):
             pred_latents = latents.clone()
             # pred_latents= self.pipe( 
             #     prompt = prompt,
-            #     num_inference_steps = 50, # self.ddpm_num_steps,
+            #     num_inference_steps = 5, # self.ddpm_num_steps,
             #     guidance_scale = self.guidance_scale, #  7.5,
             #     sag_scale = self.sag_scale,#  0.75,
             #     num_images_per_prompt = latents.shape[0], # B
@@ -378,9 +376,6 @@ class MyTorchModel(nn.Module):
             #     return_dict = False,
             # )[0]
         else:
-            # guidance_scale = 0.0
-            # sag_scale = 0.0
- 
             if self.training:
                 guidance_scale = 0.0
                 sag_scale = 0.0
@@ -643,7 +638,7 @@ class MyTorchModel(nn.Module):
                                           device=latents.device,).long()
             noisy_latents = self.pipe.scheduler.add_noise(latents, noises, timesteps)
         else:
-            steps = 2 if self.ddpm_num_steps > 1 else self.ddpm_num_steps#  self.ddpm_num_steps #
+            steps = 5 if self.ddpm_num_steps > 5 else self.ddpm_num_steps#  self.ddpm_num_steps #
             timesteps = torch.tensor([steps-1] * len(latents))
             # noisy_latents = latents.clone()
             noisy_latents = self.pipe.scheduler.add_noise(latents, noises, timesteps)
@@ -695,52 +690,35 @@ class MyTorchModel(nn.Module):
                 _attn_maps = {}
                 attn_maps = {}
                 # 4. Execute Denoising Loop
+                for i, t in enumerate(list(reversed(range(timestep)))): # Very Heavy
 
-                noise_pred, attn_maps,  = self._diffusion_step(
-                    latent,
-                    do_classifier_free_guidance,
-                    timestep,
-                    prompt_embeds,
-                    attn_maps,
-                )
-                # Update attn_maps
-                _attn_maps = attn_maps
-                pred_noises[idx] = noise_pred.squeeze(0).clone()
-                # compute the original sample x_t -> x_0
-                latent = self.pipe.scheduler.step(noise_pred, timestep, latent, **extra_step_kwargs).pred_original_sample
+                    if self.training:
+                        noise_pred, attn_maps,  = self._diffusion_step(
+                            latent,
+                            do_classifier_free_guidance,
+                            t,
+                            prompt_embeds,
+                            attn_maps,
+                        )
+                        # Update attn_maps
+                        _attn_maps = attn_maps
+                        pred_noises[idx] = noise_pred.squeeze(0).clone()
 
+                    else:
+                        noise_pred, attn_maps, = self._sag_step(
+                            i, t, latent, prompt_embeds,
+                            do_classifier_free_guidance, do_self_attention_guidance, 
+                            guidance_scale, sag_scale,
+                            attn_maps,
+                            added_uncond_kwargs=added_uncond_kwargs,
+                            added_cond_kwargs=added_cond_kwargs,
+                        )
+                        # Update attn_maps
+                        _attn_maps = self.update_attn_maps(_attn_maps, attn_maps, timestep)# , process)
+                        pred_noises[idx] = pred_noises[idx] + noise_pred.squeeze(0) / timestep
 
-#                 if self.training:
-
-#                     noise_pred, attn_maps,  = self._diffusion_step(
-#                         latent,
-#                         do_classifier_free_guidance,
-#                         timestep,
-#                         prompt_embeds,
-#                         attn_maps,
-#                     )
-#                     # Update attn_maps
-#                     _attn_maps = attn_maps
-#                     pred_noises[idx] = noise_pred.squeeze(0).clone()
-#                     # compute the original sample x_t -> x_0
-#                     latent = self.pipe.scheduler.step(noise_pred, timestep, latent, **extra_step_kwargs).pred_original_sample
-
-#                 else:
-
-#                     for i, t in enumerate(list(reversed(range(timestep)))): # Very Heavy
-#                         noise_pred, attn_maps, = self._sag_step(
-#                             i, t, latent, prompt_embeds,
-#                             do_classifier_free_guidance, do_self_attention_guidance, 
-#                             guidance_scale, sag_scale,
-#                             attn_maps,
-#                             added_uncond_kwargs=added_uncond_kwargs,
-#                             added_cond_kwargs=added_cond_kwargs,
-#                         )
-#                         # Update attn_maps
-#                         _attn_maps = self.update_attn_maps(_attn_maps, attn_maps, timestep)# , process)
-#                         pred_noises[idx] = pred_noises[idx] + noise_pred.squeeze(0) / timestep
-#                         # compute the previous noisy sample x_t -> x_t-1
-#                         latent = self.pipe.scheduler.step(noise_pred, t, latent, **extra_step_kwargs).prev_sample
+                    # compute the previous noisy sample x_t -> x_t-1
+                    latent = self.pipe.scheduler.step(noise_pred, t, latent, **extra_step_kwargs).prev_sample
 
                 pred_latents[idx] = latent.squeeze(0).clone()
                 net_attn_maps.append(_attn_maps)

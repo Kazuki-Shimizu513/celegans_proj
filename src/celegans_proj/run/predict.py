@@ -240,24 +240,10 @@ def predict(
         print(f"{type(batch['mask'])=}\t{batch['mask'].shape=}")
         print()
 
-
-        if target_data == "wildType":
-            print("starting Training")
-            engine.fit(
-                # datamodule=datamodule,
-                # train_dataloaders=datamodule.train_dataloader(),
-                train_dataloaders=datamodule.test_dataloader(),
-                val_dataloaders=datamodule.val_dataloader(),
-                model=model,
-                ckpt_path = ckpt,
-            )
-            ckpt_path  = out_dir.joinpath(f"{exp_name}/{model_name}/{dataset_name}/wildType/latest/weights/lightning/model.ckpt")
-
         print("starting predictions")
         predictions = engine.predict(
             model = model,
             datamodule = datamodule,
-            # dataloaders=datamodule.val_dataloader(),
             ckpt_path=ckpt,
         )
 

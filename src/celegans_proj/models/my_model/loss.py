@@ -58,14 +58,6 @@ class MyLoss(nn.Module):
             Tensor: loss
         """
 
-#         print(f"{outputs['gen_imgs'].shape=}{outputs['pred_imgs'].shape=}\t{outputs['image'].shape=}")
-#         print(f"{outputs['gen_latents'].shape=}{outputs['pred_latents'].shape=}\t{outputs['latents'].shape=}")
-#         print(f"{outputs['pred_noises'].shape=}\t{outputs['noises'].shape=}")
-#         print(f"{outputs['gen_KL_THRESHOLDS'].shape=}\t{outputs['KL_THRESHOLDS'].shape=}")
-#         print(f"{outputs['gen_masks'].shape=}{outputs['pred_masks'].shape=}\t{outputs['seg_masks'].shape=}")
-#         print(f"{outputs['pred_scores'].shape=}\t{outputs['label'].shape=}")
-
-
         loss = self.loss_image_weight * self.compute_recon_loss(
             outputs['pred_imgs'], outputs['image'], 
             perceptual="ms_ssim",# "lpips",
@@ -102,7 +94,7 @@ class MyLoss(nn.Module):
             # loss += self.loss_mask_weight * self.compute_divergence_loss(
             #     outputs['KL_THRESHOLDS'], outputs['gen_KL_THRESHOLDS'], )
 
-            loss += self.loss_kl_weight * outputs['posterior'].kl().mean()# kl loss
+            # loss += self.loss_kl_weight * outputs['posterior'].kl().mean()# kl loss
 
             # loss += self.loss_mask_weight * self.compute_segmentation_loss(
             #     outputs['pred_masks'], outputs['seg_masks'], )
@@ -134,7 +126,8 @@ class MyLoss(nn.Module):
             # loss += self.loss_mask_weight * self.compute_recon_loss(outputs['pred_masks'], outputs['gen_masks'], )
 
         elif "vae" in self.train_models:
-            loss += self.loss_kl_weight * outputs['posterior'].kl().mean()# kl loss
+            pass
+            # loss += self.loss_kl_weight * outputs['posterior'].kl().mean()# kl loss
 
         if torch.isnan(loss):
             loss = torch.tensor(1.0, dtype=torch.float32,device=outputs['image'].device,requires_grad=True)

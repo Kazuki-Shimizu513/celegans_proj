@@ -94,6 +94,7 @@ def train(
         #     filename='{epoch}',
         #     save_top_k= 1,
         # )
+
         checkpoint_callback = ModelCheckpoint(
             monitor="val_score", # pixel_metrics[0], 
             mode='max',
@@ -101,6 +102,7 @@ def train(
             filename='{epoch}',
             save_top_k= 1,
         )
+
         # checkpoint_callback = ModelCheckpoint(
         #     monitor="pixel_AUROC", # pixel_metrics[0], 
         #     mode='max',
@@ -235,7 +237,7 @@ def train(
         logger.info("please give model_name Patchcore or ReverseDistillation or SimSID")
         return 0
 
-    # model = torch.compile(model)
+    model = torch.compile(model)
 
     print("prepareing Trainer")
     engine = Engine(
@@ -247,16 +249,15 @@ def train(
         pixel_metrics=pixel_metrics,
         max_epochs = max_epochs, # -1,
         log_every_n_steps=1,
+        check_val_every_n_epoch=1,
+        reload_dataloaders_every_n_epochs=1,
     )
     print(f"{engine.image_metric_names=}\n{engine.pixel_metric_names=}")
     print(f"{engine._cache.args["callbacks"]=}")
 
     print("starting Training")
     engine.fit(
-        # datamodule=datamodule,
-        # train_dataloaders=datamodule.train_dataloader(),
-        train_dataloaders=datamodule.test_dataloader(),
-        val_dataloaders=datamodule.val_dataloader(),
+        datamodule=datamodule,
         model=model,
         ckpt_path = ckpt,
     )
@@ -266,7 +267,7 @@ if __name__ == "__main__":
 
     logging.basicConfig(filename='./logs/debug.log', filemode='w', level=logging.DEBUG)
 
-    exp_name  = "exp_20250118"
+    exp_name  = "exp_202523"
 
     dataset_name = "WDDD2_AD"
     target_data = "wildType"
@@ -289,9 +290,9 @@ if __name__ == "__main__":
     pixel_metrics = ['AUROC']
 
     # version = "v1" # "latest"# 
-    # ckpt=None
+    ckpt=None
     # ckpt = f"{out_dir}/{exp_name}/{model_name}/{dataset_name}/{target_data}/{version}/weights/lightning/model.ckpt"
-    ckpt = f"{out_dir}/exp_20250118/models/epoch=1644.ckpt"
+    ckpt = f"{out_dir}/exp_202523/checkpoint-992495-pt/epoch=0.ckpt"
     # ckpt = f"{out_dir}/exp_server/exp_20241229_vae/models/epoch=891.ckpt"
 
 
@@ -335,7 +336,7 @@ if __name__ == "__main__":
         task = TaskType.SEGMENTATION, #CLASSIFICATION,#
         worker = 16,
         seed  =  44,
-        batch = 8, # 2, # 30, # 80,#
+        batch = 1, # 2, # 30, # 80,#
         debug = True, # False, #
         debug_data_ratio = 0.9, 
         train_models = train_models,
