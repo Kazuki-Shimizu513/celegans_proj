@@ -454,6 +454,7 @@ class MyTorchModel(nn.Module):
                 # gen_masks=gen_masks,
               )
 
+        #TODO:: this is not here
         self.scale_variables(
             output,
             skip_name = ["image_path", "label", "posterior", ]
@@ -674,6 +675,12 @@ class MyTorchModel(nn.Module):
             else None
         )
 
+        if self.training_mask:
+            KL_THRESHOLDS = self.DiffSegParamModel(latents)  
+        else:
+            KL_THRESHOLDS = torch.tensor([[0.9]*4] * latents.shape[0], device=self.device) 
+
+
         # 3 Prepare for Denoising Loop 
         # 3.1 Prepare Attn Processor
         # 3.1.1 Store Original
@@ -684,7 +691,7 @@ class MyTorchModel(nn.Module):
         net_attn_maps = []
         num_total = noisy_latents.shape[0] # timesteps.sum().item()
         with self.pipe.progress_bar(total=num_total) as progress_bar:
-            for idx, (latent, timestep) in enumerate(zip(noisy_latents, timesteps)):
+            for idx, (latent, timestep, p, kl_thresh) in enumerate(zip(noisy_latents, timesteps, path, KL_THRESHOLDS)):
                 latent = latent.unsqueeze(0)
                 timestep = int(timestep.item())
                 _attn_maps = {}
@@ -710,6 +717,7 @@ class MyTorchModel(nn.Module):
                             do_classifier_free_guidance, do_self_attention_guidance, 
                             guidance_scale, sag_scale,
                             attn_maps,
+                            p,kl_thresh,
                             added_uncond_kwargs=added_uncond_kwargs,
                             added_cond_kwargs=added_cond_kwargs,
                         )
@@ -727,64 +735,14 @@ class MyTorchModel(nn.Module):
                 progress_bar.update()
             progress_bar.close()
 
-
-
         # parts segmentation
-        if self.training_mask:
-            # KL_THRESHOLDS = self.diffsegparammodel(latents)  
-            KL_THRESHOLDS = torch.tensor([[0.9]*4] * latents.shape[0], device=self.device) 
+        if not self.training:
             pred_masks = self.segment_with_attn_maps(net_attn_maps,KL_THRESHOLDS, path, store=True, title = 'pred')
-        else:
-            KL_THRESHOLDS = torch.tensor([[0.9]*4] * latents.shape[0], device=self.device) 
+        else: # TODO:: eject this pred_masks from return
             pred_masks = torch.randint(5,(latents.shape[0],256,256), device=KL_THRESHOLDS.device)
+
         del net_attn_maps
         gc.collect()
-
-
-
-
-
-#         # generate latents and gen_attn_maps
-#         self.set_attn_processor(attn_proc_name="CrossAttnStoreProcessor")
-#         # timesteps = self.scheduler.timesteps
-#         timesteps = torch.tensor([self.ddpm_num_steps -1 ] * noises.shape[0])
-#         gen_latents = noisy_latents.clone()
-#         gen_attn_maps = []
-#         num_total = noises.shape[0] # timesteps.sum().item()
-#         with self.pipe.progress_bar(total=num_total) as progress_bar:
-#             for idx, (noise, timestep) in enumerate(zip(noises, timesteps)):
-#                 noise = noise.unsqueeze(0)
-#                 timestep = int(timestep.item())
-#                 _attn_maps = {}
-#                 attn_maps = {}
-#                 noise_pred, attn_maps, = self._diffusion_step(
-#                     noise,
-#                     do_classifier_free_guidance,
-#                     timestep,
-#                     prompt_embeds,
-#                     attn_maps,
-#                 )
-#                 _attn_maps = attn_maps
-#                 gen_latent = self.pipe.scheduler.step(noise_pred, timestep, noise, **extra_step_kwargs).pred_original_sample
-
-#                 gen_latents[idx] = gen_latent.squeeze(0).clone()
-#                 gen_attn_maps.append(_attn_maps)
-#                 # Update progress bar
-#                 progress_bar.update()
-#             progress_bar.close()
-
-
-#         # parts segmentation
-#         if self.training_mask:
-#             # gen_KL_THRESHOLDS = torch.tensor([[0.9]*4] * latents.shape[0], device=self.device) 
-#             gen_KL_THRESHOLDS = self.DiffSegParamModel(gen_latents)  
-#             gen_masks = self.segment_with_attn_maps(gen_attn_maps,gen_KL_THRESHOLDS,path, store=True, title = 'gen')
-#         else:
-#             gen_KL_THRESHOLDS = torch.tensor([[0.9]*4] * latents.shape[0], device=self.device) 
-#             gen_masks = torch.randint(5,(latents.shape[0],256,256), device=KL_THRESHOLDS.device)
-#         del gen_attn_maps
-#         gc.collect()
-
 
         self.pipe.maybe_free_model_hooks()
         # make sure to set the original attention processors back
@@ -893,6 +851,7 @@ class MyTorchModel(nn.Module):
         do_classifier_free_guidance, do_self_attention_guidance, 
         guidance_scale, sag_scale,
         attn_maps,
+        path,kl_thresh,
         added_uncond_kwargs=None,
         added_cond_kwargs=None,
     ):
@@ -927,8 +886,11 @@ class MyTorchModel(nn.Module):
                 uncond_attn, cond_attn = mid_attn_map.chunk(2)
 
                 # self-attention-based degrading of latents
-                degraded_latent, attn_mask, attn_map = self.sag_masking(
-                    pred_x0, uncond_attn, map_size,
+                degraded_latent = self.sag_masking(
+                    pred_x0, 
+                    uncond_attn, 
+                    attn_maps,
+                    map_size,
                     torch.Tensor([t]).to(torch.int32), 
                     self.pipe.pred_epsilon(latent, noise_pred_uncond, t)
                 )
@@ -946,25 +908,38 @@ class MyTorchModel(nn.Module):
                 cond_attn = mid_attn_map
 
                 # self-attention-based degrading of latents
-                degraded_latent, attn_mask, attn_map= self.sag_masking(
-                    pred_x0, cond_attn, map_size, 
+                degraded_latent = self.sag_masking(
+                    pred_x0, 
+                    cond_attn, 
+                    attn_maps,
+                    map_size, 
                     torch.Tensor([t]).to(torch.int32), 
-                    self.pipe.pred_epsilon(latent, noise_pred, t)
+                    self.pipe.pred_epsilon(latent, noise_pred, t),
+                    diffseg= True, # False, #
+                    path=path,
+                    timestep=t,
+                    KL_THRESHOLD=kl_thresh,
                 )
 
                 # forward and give guidance
-                degraded_pred = self.pipe.unet(degraded_latent,t,encoder_hidden_states=prompt_embeds,
-                                added_cond_kwargs=added_cond_kwargs,
-                                ).sample
+                degraded_pred = self.pipe.unet(
+                    degraded_latent,t,
+                    encoder_hidden_states=prompt_embeds,
+                    added_cond_kwargs=added_cond_kwargs,
+                ).sample
                 noise_pred = noise_pred + sag_scale * (noise_pred - degraded_pred)
 
         return noise_pred, attn_maps,
 
-    def sag_masking(self, original_latents, attn_map, map_size, t, eps):
+    def sag_masking(self, original_latents, attn_map, attn_maps, map_size, t, eps,
+                    diffseg=False, path=None, timestep=None, KL_THRESHOLD=None,
+                    ):
         # Same masking process as in SAG paper: https://arxiv.org/pdf/2210.00939.pdf
         target_size = (64,64)
         bh, hw1, hw2 = attn_map.shape
         b, latent_channel, latent_h, latent_w = original_latents.shape
+        # print(f"In sag_masking:{attn_map.shape=}\t{original_latents.shape=}") # [20, 16, 16] [1,64,32,32]
+
         h = self.pipe.unet.config.attention_head_dim
         if isinstance(h, list):
             h = h[-1]
@@ -972,61 +947,72 @@ class MyTorchModel(nn.Module):
         if isinstance(h, tuple):
             h = h[-1]
         ##################################################################
+        # print(f"In sag_masking:{map_size=}\tattention_head_dim:{h}") # (16,1280), 20
+        # In sag_masking:map_size=(4, 4)  attention_head_dim:20
+
         # Produce attention mask
-        attn_map = attn_map.reshape(b, h, hw1, hw2) # 1,20,16,16
-        attn_mask = attn_map.mean(1, keepdim=False).sum(1, keepdim=False) > 1.0
+        attn_map = attn_map.reshape(b, h, hw1, hw2) 
+        # print(f"In sag_masking:{attn_map.shape=}") 
+        # In sag_masking:attn_map.shape=torch.Size([1, 20, 16, 16])
 
-#         print(f"In sag_masking:{attn_map.shape=}\t{original_latents.shape=}") # [20, 16, 16] [1,64,32,32]
-#         print(f"In sag_masking:{map_size=}\tattention_head_dim:{h}") # (16,1280), 20
-#         print(f"In sag_masking:{attn_mask=}") # (16),
+
+
+        if not diffseg:
+            attn_mask = attn_map.mean(1, keepdim=False).sum(1, keepdim=False) > 1.0
+            # print(f"In sag_masking:mask {attn_mask.shape=}") 
+            # In sag_masking:mask attn_mask.shape=torch.Size([1, 16])
+
+            attn_mask = (
+                attn_mask.reshape(b, map_size[0], map_size[1])
+                .unsqueeze(1)
+                .repeat(1, latent_channel, 1, 1)
+                .type(attn_map.dtype)
+            )
+            # print(f"In sag_masking:shape {attn_mask.shape=}") 
+            # In sag_masking:shape attn_mask.shape=torch.Size([1, 1024, 4, 4])
 
 
         # Add #############################################################
-        _attn_mask = (
-            attn_mask.reshape(b, map_size[0], map_size[1])
-            .unsqueeze(1)
-            # .repeat(1, latent_channel, 1, 1)
-            .type(attn_map.dtype)
-        )
-        _attn_mask = F.interpolate(_attn_mask, target_size,
-                                    mode='bilinear',
-                                    align_corners=False,
-                                   )
-        ##################################################################
+        else:
+            pred = self.segment_with_attn_map(attn_maps,KL_THRESHOLD, path, store=True, title="mid", timestep=t)
+            # print(f"In sag_masking:{pred.shape=}") # (16),
+            idx_len = []
+            for idx in range(int(torch.max(pred))):
+                mask = pred == idx
+                len_masked = len(torch.masked_select(pred, mask))
+                idx_len.append((idx, len_masked))
+            sorted_idx_tup = sorted(idx_len, key= lambda elem : elem[1], reverse=True)
+            # print(f"In sag_masking:pred_idx_count {sorted_idx_tup=}") 
+            # TODO: here,the 2nd most voted class may be embryo class, 1st:Background
+            try:
+                mask_idx = sorted_idx_tup[1][0] # embryo class, may be
+            except:
+                mask_idx = 0 # everything background class
+            attn_mask =  pred == mask_idx
 
-        attn_mask = (
-            attn_mask.reshape(b, map_size[0], map_size[1])
-            .unsqueeze(1)
-            .repeat(1, latent_channel, 1, 1)
-            .type(attn_map.dtype)
-        )
+            attn_mask = (
+                attn_mask.reshape(b, 256, 256)
+                .unsqueeze(1)
+                .repeat(1, latent_channel, 1, 1)
+                .type(attn_map.dtype)
+            )
+            # print(f"In sag_masking:shape {attn_mask.shape=}") 
+            # In sag_masking:shape attn_mask.shape=torch.Size([1, 1024, 4, 4])
+
+        ##################################################################
         attn_mask = F.interpolate(attn_mask, (latent_h, latent_w))
-
-        # Add #############################################################
-        _attn_map = attn_map.mean(1, keepdim=False) # h
-        _attn_map = _attn_map.sum(1, keepdim=False) # hw1
-        _attn_map = (
-            _attn_map.reshape(b, map_size[0], map_size[1])
-            .unsqueeze(1)
-            # .repeat(1, latent_channel, 1, 1)
-            .type(attn_map.dtype)
-        )
-        _attn_map = F.interpolate(_attn_map, target_size,
-                                    mode='bilinear',
-                                    align_corners=False,
-                                   )
- 
-        ##################################################################
-
+        # print(f"In sag_masking:interpolate {attn_mask.shape=}") 
+        # In sag_masking:interpolate attn_mask.shape=torch.Size([1, 1024, 32, 32])
 
         # Blur according to the self-attention mask
         degraded_latents = gaussian_blur_2d(original_latents, kernel_size=9, sigma=1.0)
+
         degraded_latents = degraded_latents * attn_mask + original_latents * (1 - attn_mask)
 
         # Noise it again to match the noise level
         degraded_latents = self.pipe.scheduler.add_noise(degraded_latents, noise=eps, timesteps=t[None])
 
-        return degraded_latents, _attn_mask, _attn_map
+        return degraded_latents
 
 
  
@@ -1034,36 +1020,44 @@ class MyTorchModel(nn.Module):
 
         pred_masks = []
         for attn_maps, KL_THRESHOLD, p in zip(net_attn_maps, KL_THRESHOLDS, path):
-            self.segmentor.set_KL_THRESHOLD(KL_THRESHOLD.flatten())
-           
-            weights_dict = self.split_attn_maps(attn_maps,detach=False,)
-
-            if not self.training:
-                if store:
-                    [base_dir, filename, suffix] = WDDD2FileNameUtil.strip_path(p)
-                    self.store_attn_map(weights_dict,phase=title, out_name_without_pt=filename)# weight_size depends on VAE layer num
-
-            weights_list = [
-                # weights_dict["weight_64"],
-                weights_dict["weight_32"],
-                weights_dict["weight_16"],
-                weights_dict["weight_8"],
-                weights_dict["weight_4"],
-            ]
-            weight_ratio = torch.tensor(self.segmentor.get_weight_rato(weights_list)).to(device=self.device)
-            pred = self.segmentor.segment(*weights_list, weight_ratio=weight_ratio,) # b x 512 x 512
-            pred = pred.squeeze(0)
-
-            if not self.training:
-                if store:
-                   self.vis_without_label(pred.numpy(force=True),save=True,
-                      name=f"{filename}",
-                      num_class=len(pred.unique().tolist())+1,
-                   )
- 
+            pred = self.segment_with_attn_map(attn_maps,KL_THRESHOLD, p, store=store, title=title)
             pred_masks.append(torch.Tensor(pred))
         pred_masks = torch.stack(pred_masks, dim=0)
         return pred_masks
+
+    def segment_with_attn_map(self,attn_maps,KL_THRESHOLD, path, store=False, title=None, timestep=None):
+        self.segmentor.set_KL_THRESHOLD(KL_THRESHOLD.flatten())
+       
+        weights_dict = self.split_attn_maps(attn_maps,detach=False,)
+
+#         if not self.training:
+#             if store:
+#                 [base_dir, filename, suffix] = WDDD2FileNameUtil.strip_path(path)
+#                 self.store_attn_map(weights_dict,phase=title, out_name_without_pt=filename)# weight_size depends on VAE layer num
+
+        weights_list = [
+            # weights_dict["weight_64"],
+            weights_dict["weight_32"],
+            weights_dict["weight_16"],
+            weights_dict["weight_8"],
+            weights_dict["weight_4"],
+        ]
+        weight_ratio = torch.tensor(self.segmentor.get_weight_rato(weights_list)).to(device=self.device)
+        pred = self.segmentor.segment(*weights_list, weight_ratio=weight_ratio,) # b x 512 x 512
+        pred = pred.squeeze(0)
+
+        if not self.training:
+            if store:
+               [base_dir, filename, suffix] = WDDD2FileNameUtil.strip_path(path)
+               if title=="mid":
+                   filename = filename + str(timestep)
+               self.vis_without_label(pred.numpy(force=True),save=True,
+                  name=f"{filename}",
+                  num_class=len(pred.unique().tolist())+1,
+               )
+
+        return pred
+
 
     def split_attn_maps(self, attn_maps,
         detach=True, instance_or_negative=False,batch_size=2,
@@ -1261,7 +1255,7 @@ if __name__ == "__main__":
     out_path = '/mnt/c/Users/compbio/Desktop/shimizudata/test'
     cuda_0 = torch.device("cuda:0")
     training = False 
-    training_mask = True 
+    training_mask = False # True 
 
     B = 1
     C,W,H = (1,256,256)
@@ -1278,7 +1272,7 @@ if __name__ == "__main__":
                     ),
                     v2.ToDtype(torch.float32, scale=True),
                     # TODO: YouTransform
-                    v2.Normalize(mean=[0.485], std=[0.229]),
+                    # v2.Normalize(mean=[0.485], std=[0.229]),
                 ]) 
     img = transforms(img)
     img = img.to(device=cuda_0)
@@ -1300,8 +1294,8 @@ if __name__ == "__main__":
     model = MyTorchModel(
             training = training,
             training_mask = training_mask,
-            train_models=["vae", "diffusion"],
-            ddpm_num_steps= 4,# 1000,
+            train_models=[ "diffusion"],# "vae",
+            ddpm_num_steps= 2,# 1000,
     ).to(device=cuda_0)
     # model = torch.compile(model)
 

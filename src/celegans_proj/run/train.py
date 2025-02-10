@@ -1,4 +1,3 @@
-
 import torch 
 from torchvision.transforms.v2 import Transform
 from torchvision.transforms import v2
@@ -229,8 +228,8 @@ def train(
             learning_rate = learning_rate,
             train_models= train_models,
             training = True,
-            training_mask = True,
-            ddpm_num_steps= 10, # 50, # 
+            training_mask = False,#True,
+            ddpm_num_steps= 2, # 10, # 50, # 
             out_path = str(out_dir),
         )
     else:
@@ -267,7 +266,7 @@ if __name__ == "__main__":
 
     logging.basicConfig(filename='./logs/debug.log', filemode='w', level=logging.DEBUG)
 
-    exp_name  = "exp_202523"
+    exp_name  = "exp_202528"
 
     dataset_name = "WDDD2_AD"
     target_data = "wildType"
@@ -284,7 +283,7 @@ if __name__ == "__main__":
     log_dir  = "./logs"
     # model_name = "ReverseDistillation" # "Patchcore"
     model_name = "MyModel"
-    train_models = ["vae", ] # "diffusion", # 
+    train_models = ["diffusion",] # "vae", "diffusion", # 
     threshold =   "F1AdaptiveThreshold" # ManualThreshold(default_value=0.5) # 
     image_metrics  = ['F1Score']
     pixel_metrics = ['AUROC']
@@ -292,7 +291,7 @@ if __name__ == "__main__":
     # version = "v1" # "latest"# 
     ckpt=None
     # ckpt = f"{out_dir}/{exp_name}/{model_name}/{dataset_name}/{target_data}/{version}/weights/lightning/model.ckpt"
-    ckpt = f"{out_dir}/exp_202523/checkpoint-992495-pt/epoch=0.ckpt"
+    ckpt = f"{out_dir}/exp_202528/models/epoch=430.ckpt"
     # ckpt = f"{out_dir}/exp_server/exp_20241229_vae/models/epoch=891.ckpt"
 
 
@@ -322,10 +321,10 @@ if __name__ == "__main__":
         # learning_rate  = 1e+8, 
         # learning_rate  = 1e+4, 
         # learning_rate  = 1e+1, 
-        learning_rate  = 1e-1,
+        # learning_rate  = 1e-1,
         # learning_rate  = 1e-4,
         # learning_rate  = 1e-8,
-        # learning_rate  = 1e-10,
+        learning_rate  = 1e-10,
         # learning_rate  = 1e-20,
         # learning_rate  = 1e-30,
         # learning_rate  = 1e-100,
@@ -336,9 +335,9 @@ if __name__ == "__main__":
         task = TaskType.SEGMENTATION, #CLASSIFICATION,#
         worker = 16,
         seed  =  44,
-        batch = 1, # 2, # 30, # 80,#
+        batch = 1, # 16, # 30, # 80,#
         debug = True, # False, #
-        debug_data_ratio = 0.9, 
+        debug_data_ratio = 0.09, 
         train_models = train_models,
         max_epochs = -1,
     )

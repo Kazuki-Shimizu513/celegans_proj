@@ -218,8 +218,8 @@ class MyModel(AnomalyModule):
             for param in self.model.pipe.vae.encoder.parameters():
                 param.requires_grad = False 
             for param in self.model.pipe.vae.decoder.parameters():
-                # param.requires_grad = False 
-                param.requires_grad = True 
+                param.requires_grad = False 
+                # param.requires_grad = True 
 
 
     def training_step(self, batch: dict[str, str | torch.Tensor], batch_idx, *args, **kwargs) -> STEP_OUTPUT:
