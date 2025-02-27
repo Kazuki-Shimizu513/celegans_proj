@@ -266,7 +266,7 @@ if __name__ == "__main__":
 
     logging.basicConfig(filename='./logs/debug.log', filemode='w', level=logging.DEBUG)
 
-    exp_name  = "exp_202528"
+    exp_name  = "exp_2025210"
 
     dataset_name = "WDDD2_AD"
     target_data = "wildType"
@@ -291,7 +291,7 @@ if __name__ == "__main__":
     # version = "v1" # "latest"# 
     ckpt=None
     # ckpt = f"{out_dir}/{exp_name}/{model_name}/{dataset_name}/{target_data}/{version}/weights/lightning/model.ckpt"
-    ckpt = f"{out_dir}/exp_202528/models/epoch=430.ckpt"
+    ckpt = f"{out_dir}/exp_2025210/models/epoch=435.ckpt"
     # ckpt = f"{out_dir}/exp_server/exp_20241229_vae/models/epoch=891.ckpt"
 
 
@@ -321,10 +321,10 @@ if __name__ == "__main__":
         # learning_rate  = 1e+8, 
         # learning_rate  = 1e+4, 
         # learning_rate  = 1e+1, 
-        # learning_rate  = 1e-1,
+        learning_rate  = 1e-1,
         # learning_rate  = 1e-4,
         # learning_rate  = 1e-8,
-        learning_rate  = 1e-10,
+        # learning_rate  = 1e-10,
         # learning_rate  = 1e-20,
         # learning_rate  = 1e-30,
         # learning_rate  = 1e-100,
