@@ -30,12 +30,19 @@ rye sync
 
 ### Dataset Prepareraion
 All dataset we use made from https://wddd.riken.jp/
-please fetch and expand data using https://github.com/Kazuki-Shimizu513/celegans_proj/blob/main/src/celegans_proj/generate/fetch.py
-and, make WDDD2_AD dataset using https://github.com/Kazuki-Shimizu513/celegans_proj/blob/main/src/celegans_proj/generate/transfer.py
+
+
+please follow instructiions below 
+1. fetch and expand data using https://github.com/Kazuki-Shimizu513/celegans_proj/blob/main/src/celegans_proj/generate/fetch.py
+2. make WDDD2_AD dataset using https://github.com/Kazuki-Shimizu513/celegans_proj/blob/main/src/celegans_proj/generate/transfer.py
+
+
 note: make sure implement argments which fits your environment
 
 ### Training 
 training code is https://github.com/Kazuki-Shimizu513/celegans_proj/blob/main/src/celegans_proj/run/train.py
+
+
 please modify arguments to your environment and just run 
 ```
 cd celegans_proj/run
@@ -45,6 +52,8 @@ python train.py
 ### Inference
 
 also inference code is https://github.com/Kazuki-Shimizu513/celegans_proj/blob/main/src/celegans_proj/run/predict.py
+
+
 please modify arguments to your environment and just run 
 ```
 cd celegans_proj/run
@@ -52,10 +61,4 @@ python predict.py
 ```
 
 
-### Citation
-@article{kazuki2025sapag,
-      title={SAPAG: Self-Attention Parts Guidance for Anomaly Detection in C. elegans Images with Latent Diffusion Models}, 
-      author={Kazuki Shimizu and, Yukako Tohsato},
-      journal={},
-      year={2025}
-}
+## Citation
