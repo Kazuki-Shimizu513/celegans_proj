@@ -16,17 +16,17 @@ including PatchCore, RD4AD, and THOR, especially in detecting anomalies in embry
 
 1. Clone this Repo
 
-'''
+```
 gh repo clone Kazuki-Shimizu513/celegans_proj
 cd celegans_proj
-'''
+```
 
 2. Install rye via https://rye.astral.sh/guide/installation/
 3. Sync all dependencies 
 
-'''
+```
 rye sync
-'''
+```
 
 ### Dataset Prepareraion
 All dataset we use made from https://wddd.riken.jp/
@@ -37,19 +37,19 @@ note: make sure implement argments which fits your environment
 ### Training 
 training code is https://github.com/Kazuki-Shimizu513/celegans_proj/blob/main/src/celegans_proj/run/train.py
 please modify arguments to your environment and just run 
-'''
+```
 cd celegans_proj/run
 python train.py
-'''
+```
 
 ### Inference
 
 also inference code is https://github.com/Kazuki-Shimizu513/celegans_proj/blob/main/src/celegans_proj/run/predict.py
 please modify arguments to your environment and just run 
-'''
+```
 cd celegans_proj/run
 python predict.py
-'''
+```
 
 
 ### Citation
